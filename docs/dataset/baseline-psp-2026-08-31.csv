@@ -15,3 +15,8 @@ PayPal,wallet,rimborso,storno al cliente,0.00,0.00,EUR,https://www.paypal.com/it
 Monerium,stablecoin,emissione,IBAN SEPA verso EURe,0.00,0.00,EUR,https://monerium.com/fee-schedule/,2026-08-31,Currently Monerium is not charging any fees
 Monerium,stablecoin,rimborso,EURe verso IBAN SEPA,0.00,0.00,EUR,https://monerium.com/fee-schedule/,2026-08-31,Currently Monerium is not charging any fees
 Monerium,stablecoin,canone,un IBAN per cliente e accesso API,0.00,0.00,EUR,https://monerium.com/fee-schedule/,2026-08-31,Currently Monerium is not charging any fees
+Stripe,carta,accredito,primo bonifico verso il conto dell esercente (Italia),,,giorni,https://docs.stripe.com/payouts,2026-09-01,sette giorni di calendario
+Stripe,carta,accredito,bonifici successivi (Italia),,,giorni,https://docs.stripe.com/payouts,2026-09-01,tre giorni lavorativi
+PayPal,wallet,accredito,trasferimento standard sul conto bancario,,,giorni,https://www.paypal.com/it/cshelp/article/come-faccio-a-trasferire-sul-mio-conto-bancario-i-pagamenti-ricevuti-con-il-profilo-venditore-help450,2026-09-01,opzione standard indicata in 1-3 giorni; il trasferimento immediato e a pagamento
+Monerium,stablecoin,accredito,SEPA Instant,,,secondi,https://monerium.com/partners/,2026-09-01,settle within 5 seconds including the time to mint or burn EURe tokens onchain
+Monerium,stablecoin,accredito,SEPA standard,,,giorni,https://monerium.com/partners/,2026-09-01,settles within one business day where Instant is not available

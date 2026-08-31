@@ -12,7 +12,7 @@
 import { createPublicClient, http, parseAbiItem, formatUnits } from 'viem';
 
 import {
-  RPC_URL, CHAIN_ID, FORWARDER, CONFIRMATIONS, POLL_MS, DECIMALS, MAX_BLOCK_SPAN,
+  RPC_URL, CHAIN_ID, FORWARDER, CONFIRMATIONS, FINALITY_MODE, POLL_MS, DECIMALS, MAX_BLOCK_SPAN,
   STATE_FILE, START_BLOCK, REDEEM_ENABLED,
 } from './config.mjs';
 import { caricaStato, salvaStato } from './state.mjs';
@@ -99,16 +99,38 @@ async function osserva(daBlocco, aBlocco) {
   }
 }
 
+/// Ultimo blocco che soddisfa il criterio di finalita' configurato, insieme
+/// all'istante da attribuire al marcatore t2.
+///
+/// Con il conteggio delle conferme l'istante e' quello del blocco che porta la
+/// transazione alla profondita' richiesta, ed e' un'ora di catena, indipendente
+/// da quando il servizio se ne accorge. Con le etichette non esiste un blocco
+/// equivalente, perche' l'avanzamento dipende da eventi del primo livello: si
+/// adotta l'ora del blocco che in quel momento e' la testa sicura o
+/// finalizzata, e la misura porta percio' una quantizzazione pari
+/// all'intervallo di sondaggio, trascurabile rispetto ai minuti in gioco.
+async function testaFinale(testa) {
+  if ('confirmations' === FINALITY_MODE) {
+    return { numero: testa - CONFIRMATIONS, perBlocco: (b) => b + CONFIRMATIONS };
+  }
+  const blocco = await client.getBlock({ blockTag: FINALITY_MODE });
+  oraBlocco.set(blocco.number.toString(), Number(blocco.timestamp));
+  return { numero: blocco.number, perBlocco: () => blocco.number };
+}
+
 async function confermaEnotifica(testa) {
+  if (inAttesa.size === 0) return;
+
+  const finale = await testaFinale(testa);
+
   for (const [k, p] of inAttesa) {
-    const profondita = testa - p.blocco;
-    if (profondita < CONFIRMATIONS) continue;
+    if (p.blocco > finale.numero) continue;
 
     const importo = formatUnits(p.valore, DECIMALS);
 
-    // t2 e' l'ora del blocco che porta la transazione alla profondita'
-    // richiesta: e' li' che l'incasso diventa certo per l'esercente.
-    const t2 = await istanteBlocco(p.blocco + CONFIRMATIONS);
+    // t2 e' l'istante in cui l'incasso diventa certo per l'esercente secondo
+    // il criterio scelto.
+    const t2 = await istanteBlocco(finale.perBlocco(p.blocco));
 
     const esito = await notificaPagamento({
       chainId: CHAIN_ID,
@@ -118,7 +140,8 @@ async function confermaEnotifica(testa) {
       importo,
       payer: p.payer,
       blocco: p.blocco,
-      conferme: CONFIRMATIONS,
+      conferme: 'confirmations' === FINALITY_MODE ? Number(CONFIRMATIONS) : 0,
+      criterio: FINALITY_MODE,
       t1: p.t1,
       t2,
       gasUsato: p.gasUsato,
@@ -140,7 +163,7 @@ async function confermaEnotifica(testa) {
       continue;
     }
 
-    console.log(`[CONFERMATO] ordine ${p.orderRef.slice(0, 10)} | ${importo} EURe | profondità ${profondita} blocchi`);
+    console.log(`[CONFERMATO] ordine ${p.orderRef.slice(0, 10)} | ${importo} EURe | ${'confirmations' === FINALITY_MODE ? `profondità ${testa - p.blocco} blocchi` : `criterio ${FINALITY_MODE}, ${testa - p.blocco} blocchi di ritardo`}`);
     notificate.add(k);
     inAttesa.delete(k);
     stato.notificate = [...notificate];
@@ -185,7 +208,8 @@ async function main() {
   const testa = await client.getBlockNumber();
   let ultimo = stato.ultimoBlocco ?? START_BLOCK ?? testa;
 
-  console.log(`Watcher avviato. Contratto ${FORWARDER}, finalità ${CONFIRMATIONS} conferme, sondaggio ogni ${POLL_MS} ms.`);
+  const criterio = 'confirmations' === FINALITY_MODE ? `${CONFIRMATIONS} conferme` : `etichetta ${FINALITY_MODE}`;
+  console.log(`Watcher avviato. Contratto ${FORWARDER}, finalità per ${criterio}, sondaggio ogni ${POLL_MS} ms.`);
   console.log(`Ripartenza dal blocco ${ultimo} (testa ${testa}), ${notificate.size} eventi già notificati.`);
   if (REDEEM_ENABLED && !configurazioneRimborsoCompleta()) {
     console.log('Rimborso automatico abilitato ma non configurato: i pagamenti verranno solo notificati.');

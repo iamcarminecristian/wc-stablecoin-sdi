@@ -22,6 +22,32 @@ export const CHAIN_ID = Number(process.env.CHAIN_ID ?? '0');
 // non ha bisogno di sapere in anticipo quali ordini attendere.
 export const FORWARDER = getAddress(richiesta('FORWARDER_ADDRESS'));
 
+// Criterio di finalita'. Contare le conferme e' il criterio giusto su una rete
+// di primo livello, dove la profondita' approssima il costo di riscrivere la
+// storia. Su una rete di secondo livello non lo e': i blocchi che il sequencer
+// produce non derivano dai dati pubblicati sul primo livello e restano
+// revocabili finche' non lo sono, e nessun numero di conferme accorcia quella
+// attesa. Il protocollo espone due etichette che nominano i due passaggi:
+//
+//   confirmations  profondita' in blocchi. Non offre alcuna garanzia ancorata
+//                  al primo livello: adatto a una rete di primo livello, o a
+//                  una scelta consapevole di fidarsi del sequencer.
+//   safe           il blocco e' ricostruibile dai dati pubblicati sul primo
+//                  livello. Puo' ancora decadere se decade il blocco di primo
+//                  livello che li contiene.
+//   finalized      il blocco di primo livello e' finalizzato. Revocarlo
+//                  richiederebbe una violazione della finalita' del consenso
+//                  sottostante, con la relativa penalizzazione.
+//
+// Il valore predefinito resta 'confirmations' per compatibilita' con le reti
+// di primo livello; su una rete di secondo livello va impostato 'finalized',
+// come argomentato nel Capitolo 6.
+export const FINALITY_MODE = process.env.FINALITY_MODE ?? 'confirmations';
+if (!['confirmations', 'safe', 'finalized'].includes(FINALITY_MODE)) {
+  console.error(`FINALITY_MODE non riconosciuto: ${FINALITY_MODE}`);
+  process.exit(1);
+}
+
 export const CONFIRMATIONS = BigInt(process.env.CONFIRMATIONS ?? '12');
 export const POLL_MS = Number(process.env.POLL_MS ?? '5000');
 export const DECIMALS = Number(process.env.TOKEN_DECIMALS ?? '18');

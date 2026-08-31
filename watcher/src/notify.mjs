@@ -37,6 +37,7 @@ export async function notificaPagamento(evento) {
     // prese con criteri diversi finiscono indistinguibili nello stesso file e
     // la latenza di conferma diventa un aggregato privo di significato.
     conferme: Number(evento.conferme),
+    criterio: String(evento.criterio ?? 'confirmations'),
     // Marcatori e costo di rete per il protocollo KPI del Capitolo 6.
     // Solo questo servizio li conosce: il plugin non parla con la catena.
     t1: evento.t1,

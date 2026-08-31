@@ -113,9 +113,12 @@ class WCSDI_Misure {
 			// prese su reti diverse, che il solo nome configurato confonde.
 			'chain_id'          => (string) $order->get_meta( '_wcsdi_chain_id' ),
 			'forwarder'         => (string) $order->get_meta( '_wcsdi_forwarder' ),
-			// Numero di conferme richiesto per dichiarare finale il pagamento. La
-			// latenza di conferma ne discende direttamente, quindi aggregare misure
-			// prese con criteri diversi non avrebbe senso.
+			// Criterio con cui il pagamento e stato dichiarato finale, e la sua
+			// eventuale profondita in blocchi. La latenza di conferma ne discende
+			// direttamente, quindi aggregare misure prese con criteri diversi non
+			// avrebbe senso; su una rete di secondo livello il conteggio delle
+			// conferme e le etichette misurano garanzie di natura diversa.
+			'criterio'          => (string) $order->get_meta( '_wcsdi_criterio' ),
 			'conferme'          => (string) $order->get_meta( '_wcsdi_conferme' ),
 			'tx_hash'           => (string) $order->get_meta( '_wcsdi_tx_hash' ),
 			'gas_usato'         => (string) $order->get_meta( '_wcsdi_gas_usato' ),

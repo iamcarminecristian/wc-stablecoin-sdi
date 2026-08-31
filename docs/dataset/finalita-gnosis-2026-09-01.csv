@@ -1,0 +1,3 @@
+etichetta,unita,n,min,mediana,p95,max,finestra_da,finestra_a,rete
+safe,secondi,47,75,120,153.49999999999997,155,2026-08-31T23:33:45.000Z,2026-08-31T23:41:40.000Z,https://rpc.gnosischain.com
+finalized,secondi,47,155,200,233.49999999999997,235,2026-08-31T23:33:45.000Z,2026-08-31T23:41:40.000Z,https://rpc.gnosischain.com
