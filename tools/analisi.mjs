@@ -93,8 +93,13 @@ const tutte = leggiCsv(DATASET);
 // Si tengono solo le misure prese sulla rete di prova pubblica, con orologi
 // coerenti e con il criterio di finalita' registrato: senza quest'ultimo la
 // latenza di conferma non e' interpretabile.
+// Con --conferme=N si isola un singolo criterio di finalita', che e' il modo
+// corretto di analizzare un file che ne contiene piu' d'uno.
+const SOLO_CONFERME = arg('conferme', null);
+
 const righe = tutte.filter((r) =>
-  r.chain_id === '84532' && r.anomalia_orologio === '0' && r.conferme !== '');
+  r.chain_id === '84532' && r.anomalia_orologio === '0' && r.conferme !== '' &&
+  (SOLO_CONFERME === null || r.conferme === SOLO_CONFERME));
 
 const scartate = tutte.length - righe.length;
 
