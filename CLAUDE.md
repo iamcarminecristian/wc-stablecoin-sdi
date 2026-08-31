@@ -7,15 +7,17 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 - `make init` — prima accensione: WordPress+WooCommerce provisionati su http://localhost:8080 (admin/admin) e chain locale anvil su :8545
 - `make up` / `make down` / `make nuke` — gestione ambiente
 - `make demo` — deploya MockEURe sulla chain locale, simula un pagamento e mina 12 blocchi (input per lo spike 1)
+- `make contracts` — compila il contratto di inoltro e ne esegue le verifiche
+- `make e2e` — verifica end-to-end: due ordini WooCommerce di pari importo, pagamento on-chain, transizione di stato, idempotenza, autenticazione
 - Spike: `cp .env.example .env` alla root (una volta sola), poi in `spikes/*/` `npm install && npm start`
 
 ## Stato e ordine di lavoro
-1. Spike 1 (rilevamento on-chain): completo, verificato su Base Sepolia e, con override da shell, su anvil via `make demo`
-2. Spike 2 (redemption Monerium): auth, `/tokens`, `/profiles` e `/ibans` verificati contro il sandbox reale. Resta il `POST /orders`, che richiede una firma EIP-191 del wallet: vedi il vincolo non-custodial piu' sotto
-3. Spike 3 (FatturaPA/SdI): generazione XML 1.9.1 completa e prima fattura di test accettata dal sandbox; `trasmetti()` e' ancora uno stub, l'invio va portato nel codice
-4. Consolidamento: spike 1 → `watcher/`, spike 2-3 → `plugin/` (con Action Scheduler), poi Capitolo 5 della tesi
+1. Spike 1 e 2 consolidati in `watcher/`: rilevamento, finalita', notifica idempotente e rimborso. Verificato end-to-end con `make e2e`
+2. Plugin: gateway, riferimento dell'ordine, endpoint REST con verifica dell'importo e transizione di stato (RF-02, RF-03, RF-04, RNF-03). Restano la fatturazione via Action Scheduler (RF-06, RF-07), la nota di credito (RF-10) e l'integrazione nei checkout blocks
+3. Spike 3 (FatturaPA/SdI): generazione XML 1.9.1 completa e prima fattura di test accettata dal sandbox; `trasmetti()` e' ancora uno stub, l'invio va portato nel plugin
+4. Il rimborso e' scritto ma non ancora eseguito end-to-end: manca `MERCHANT_SIGNER_PRIVATE_KEY` nel `.env`
 
-Lo spike 2 va eseguito prima dello spike 1: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
+Lo spike 2 resta utile per interrogare il sandbox: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
 
 ## Ambienti esterni (sandbox verificati il 31/08/2026)
 
@@ -35,6 +37,15 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 - L'attributo `versione` sul tag radice deve coincidere esattamente con `<FormatoTrasmissione>`, altrimenti il SdI scarta la fattura con errore 00428.
 - Il Codice Destinatario da registrare sull'Agenzia delle Entrate serve solo al ciclo passivo: per il nostro caso, solo ciclo attivo, non serve.
 - **Aperto**: non e' confermato se il sandbox raggiunga il vero canale di test SdI dell'Agenzia delle Entrate o simuli internamente le ricevute. La risposta condiziona il protocollo KPI del Capitolo 6.
+
+## Come dialogano watcher e plugin
+
+Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal contratto e' per definizione un incasso dell'esercente, e il riferimento viaggia dentro l'evento. Il watcher osserva, applica la finalita' e notifica; il plugin resta l'unica autorita' sullo stato dell'ordine e decide se l'importo basta.
+
+- `order_ref` = `hash_hmac('sha256', 'wcsdi-order:'.$id, wcsdi_watcher_secret)`. Deterministico, non invertibile da fuori, 32 byte. Il segreto e' lo stesso di `WCSDI_SHARED_SECRET` nel `.env`: se divergono, le notifiche vengono respinte con 401.
+- La ricerca dell'ordine per riferimento **riverifica sempre** il metadato con `hash_equals`. `wc_get_orders` delega a data store diversi secondo che HPOS sia attivo, e un filtro non compreso viene ignorato in silenzio: senza riverifica un pagamento finisce sull'ordine sbagliato. E' un bug gia' occorso, non un'ipotesi.
+- La ricerca non filtra per stato, altrimenti una notifica ripetuta su un ordine gia' pagato non riconoscerebbe il duplicato e RNF-03 cadrebbe proprio nel caso che l'idempotenza esiste per coprire.
+- L'immagine di WordPress non riscrive `/wp-json/`: la REST API si raggiunge come `?rest_route=/wcsdi/v1/...`, forma gia' impostata nel `.env.example`.
 
 ## Correlazione pagamento-ordine
 

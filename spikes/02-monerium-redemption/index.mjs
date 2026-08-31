@@ -139,13 +139,13 @@ function messaggioOrdine(importo, iban) {
 // isolato di proposito perche' e' l'unica cosa da cambiare se il modello
 // evolve. Nel sistema consolidato la chiave vive nel servizio watcher, non
 // nel plugin PHP: vedi "Capacita' di firma" in CLAUDE.md. Qui, nello spike,
-// arriva da SPIKE_SIGNER_PRIVATE_KEY perche' e' un banco di prova su testnet
+// arriva da MERCHANT_SIGNER_PRIVATE_KEY perche' e' un banco di prova su testnet
 // con fondi simulati.
 async function firma(messaggio) {
-  const chiave = process.env.SPIKE_SIGNER_PRIVATE_KEY;
+  const chiave = process.env.MERCHANT_SIGNER_PRIVATE_KEY;
   if (!chiave) {
     throw new Error(
-      'Firma non disponibile: manca SPIKE_SIGNER_PRIVATE_KEY. ' +
+      'Firma non disponibile: manca MERCHANT_SIGNER_PRIVATE_KEY. ' +
       `Messaggio da firmare: ${messaggio}`
     );
   }

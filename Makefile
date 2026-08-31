@@ -1,4 +1,4 @@
-.PHONY: init up down nuke logs demo
+.PHONY: init up down nuke logs demo contracts e2e
 
 init:      ## prima accensione: container + provisioning WordPress/WooCommerce
 	./setup.sh
@@ -17,3 +17,9 @@ logs:
 
 demo:      ## deploya MockEURe sulla chain locale e simula un pagamento confermato
 	cd tools/local-chain && npm install --silent && node deploy.mjs && node pay.mjs
+
+contracts: ## compila e pubblica il contratto di inoltro sulla chain locale
+	cd contracts && npm install --silent && npm run compile && npm test
+
+e2e:       ## verifica end-to-end: checkout, pagamento on-chain, stato dell'ordine
+	./tools/e2e-setup.sh

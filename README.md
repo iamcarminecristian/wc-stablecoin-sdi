@@ -7,7 +7,7 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 ```
 plugin/             plugin WooCommerce (PHP): gateway, endpoint REST, configurazione
 contracts/          contratto di inoltro dei pagamenti (Solidity) + compile, deploy, test
-watcher/            servizio Node di rilevamento (nasce dal consolidamento dello spike 1)
+watcher/            servizio Node di rilevamento: osserva, conferma, notifica, rimborsa
 spikes/             tre spike isolati, in ordine, ciascuno con criterio di uscita
 tools/local-chain/  MockEURe + script di deploy e pagamento simulato su anvil
 docker-compose.yml  WordPress+WooCommerce, chain EVM locale, watcher (profilo full)
@@ -52,6 +52,15 @@ Lo spike 2 va eseguito per primo: il suo output fornisce il `TOKEN_ADDRESS` che 
 3. **03-fatturapa-sdi**: genera subito la fattura di esempio in `out/` (tracciato 1.9.1, mappatura §4.5: TD01, EUR, MP05, riferimenti on-chain in AltriDatiGestionali dentro DettaglioLinee); invio al SdI di test da completare dopo l'attivazione openapi.it. Uscita: ricevuta di consegna dal SdI di test.
 
 **Gate fiscale**: le scelte MP05 / AltriDatiGestionali / momento di effettuazione sono in attesa di validazione del relatore; non consolidare lo spike 3 nel plugin prima dell'ok (vedi CLAUDE.md).
+
+## Verifica end-to-end
+
+```bash
+make init     # WordPress + WooCommerce (una volta sola)
+make e2e      # due ordini di pari importo, pagati on-chain, fino allo stato finale
+```
+
+Copre i passi da 1 a 3 del flusso nominale: creazione dell'ordine con il proprio riferimento, pagamento tramite il contratto di inoltro, rilevamento con criterio di finalita', verifica dell'importo e transizione di stato. Verifica anche che una notifica ripetuta sia riconosciuta come duplicata e che una priva del segreto condiviso sia respinta.
 
 ## Contratto di inoltro
 
