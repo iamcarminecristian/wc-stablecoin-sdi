@@ -1,0 +1,17 @@
+fornitore,binario,voce,ambito,percentuale,fisso_eur,valuta,fonte_url,data_consultazione,note
+Stripe,carta,commissione di transazione,carta standard SEE,1.50,0.25,EUR,https://stripe.com/it/pricing,2026-08-31,tariffa a consumo senza canone
+Stripe,carta,commissione di transazione,carta premium SEE,2.80,0.25,EUR,https://stripe.com/it/pricing,2026-08-31,carte business e con programmi di rimborso
+Stripe,carta,commissione di transazione,carta Regno Unito,2.50,0.25,EUR,https://stripe.com/it/pricing,2026-08-31,
+Stripe,carta,commissione di transazione,carta internazionale,3.15,0.25,EUR,https://stripe.com/it/pricing,2026-08-31,emittente fuori da SEE e Regno Unito
+Stripe,carta,supplemento,conversione di valuta,2.00,0.00,EUR,https://stripe.com/it/pricing,2026-08-31,si somma alla commissione di transazione
+Stripe,carta,contestazione,dispute ricevuta,0.00,20.00,EUR,https://stripe.com/it/pricing,2026-08-31,ulteriori 20 EUR per la risposta manuale restituiti se la contestazione e vinta
+Stripe,carta,rimborso,storno al cliente,0.00,0.00,EUR,https://stripe.com/it/pricing,2026-08-31,nessun costo per emettere il rimborso ma le commissioni della transazione originaria non vengono restituite
+PayPal,wallet,commissione di transazione,PayPal e Paga a rate nazionale,3.40,0.35,EUR,https://www.paypal.com/it/business/fees,2026-08-31,pagamento con saldo o conto PayPal del cliente
+PayPal,carta,commissione di transazione,elaborazione delle carte,1.20,0.35,EUR,https://www.paypal.com/it/business/fees,2026-08-31,Pagamenti avanzati con carta piano tariffario misto
+PayPal,carta,commissione di transazione,American Express,3.50,0.00,EUR,https://www.paypal.com/it/business/paypal-business-fees,2026-08-31,
+PayPal,wallet,supplemento,mittente Regno Unito,1.29,0.00,EUR,https://www.paypal.com/it/business/paypal-business-fees,2026-08-31,si somma alla tariffa nazionale
+PayPal,wallet,supplemento,mittente fuori da SEE e Regno Unito,1.99,0.00,EUR,https://www.paypal.com/it/business/paypal-business-fees,2026-08-31,si somma alla tariffa nazionale
+PayPal,wallet,rimborso,storno al cliente,0.00,0.00,EUR,https://www.paypal.com/it/business/paypal-business-fees,2026-08-31,nessuna tariffa per effettuare il rimborso ma le commissioni gia pagate non vengono restituite
+Monerium,stablecoin,emissione,IBAN SEPA verso EURe,0.00,0.00,EUR,https://monerium.com/fee-schedule/,2026-08-31,Currently Monerium is not charging any fees
+Monerium,stablecoin,rimborso,EURe verso IBAN SEPA,0.00,0.00,EUR,https://monerium.com/fee-schedule/,2026-08-31,Currently Monerium is not charging any fees
+Monerium,stablecoin,canone,un IBAN per cliente e accesso API,0.00,0.00,EUR,https://monerium.com/fee-schedule/,2026-08-31,Currently Monerium is not charging any fees

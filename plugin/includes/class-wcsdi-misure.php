@@ -32,6 +32,24 @@ class WCSDI_Misure {
 	const MARCATORI = array( 't0', 't1', 't2', 't3', 't4', 't5' );
 
 	/**
+	 * Valori di «marking» che il fornitore assegna quando il Sistema di
+	 * Interscambio ha chiuso la propria lavorazione con esito positivo: la
+	 * fattura è stata consegnata al destinatario oppure, non essendo il canale
+	 * disponibile, è stata messa a sua disposizione nell'area riservata. In
+	 * entrambi i casi il documento è fiscalmente valido, che è ciò che il KPI
+	 * di integrità fiscale misura.
+	 *
+	 * I nomi sono quelli documentati dal fornitore e usano il trattino, non il
+	 * carattere di sottolineatura: scriverli nell'altra forma produce un
+	 * confronto sempre falso e un KPI costantemente a zero.
+	 * Fonte: console.openapi.com/apis/sdi/documentation.
+	 */
+	const MARKING_CONSEGNATA = array( 'delivered', 'delivered-pa', 'not-delivered' );
+
+	/** Valori oltre i quali lo stato della fattura non evolve più. */
+	const MARKING_DEFINITIVI = array( 'delivered', 'delivered-pa', 'not-delivered', 'rejected' );
+
+	/**
 	 * Registra un marcatore, se non già presente.
 	 *
 	 * Il primo valore vince: una notifica ripetuta o un ritentativo non devono
@@ -163,7 +181,7 @@ class WCSDI_Misure {
 	 * plugin, non di ciò che ha fatto il destinatario.
 	 */
 	private static function fattura_accettata( $stato ) {
-		return in_array( $stato, array( 'delivered', 'not_delivered' ), true );
+		return in_array( $stato, self::MARKING_CONSEGNATA, true );
 	}
 
 	private static function iso( $timestamp ) {

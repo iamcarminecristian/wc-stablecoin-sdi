@@ -64,6 +64,29 @@ class WCSDI_SdI_Client {
 	}
 
 	/**
+	 * Rilegge le sole notifiche di una fattura dall'endpoint dedicato.
+	 *
+	 * È la seconda delle due strade che il fornitore documenta per conoscere
+	 * l'esito presso il SdI: l'altra è la registrazione di una callback, che
+	 * presuppone un'installazione raggiungibile dall'esterno e quindi non è
+	 * praticabile per un'installazione locale. Le due fonti dovrebbero
+	 * coincidere; si interroga anche questa perché il campo incorporato nella
+	 * risposta della fattura può restare vuoto senza che ciò distingua «non ci
+	 * sono notifiche» da «questa risposta non le riporta».
+	 *
+	 * L'identificativo va nel percorso: passato come parametro di query il
+	 * servizio risponde 400 «uuid is required».
+	 *
+	 * @return array Elenco delle notifiche, vuoto se non ve ne sono.
+	 */
+	public function notifiche( $uuid ) {
+		$risposta = $this->richiesta( 'GET', '/invoices_notifications/' . rawurlencode( $uuid ) );
+		$dati     = isset( $risposta['data'] ) ? $risposta['data'] : array();
+
+		return is_array( $dati ) ? $dati : array();
+	}
+
+	/**
 	 * Esegue la chiamata distinguendo i guasti transitori da quelli definitivi.
 	 *
 	 * La distinzione è la parte che conta: un documento scartato per dati

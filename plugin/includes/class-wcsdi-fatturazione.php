@@ -166,7 +166,18 @@ class WCSDI_Fatturazione {
 			) );
 		}
 
-		foreach ( $stato['notifications'] as $notifica ) {
+		$notifiche = $stato['notifications'];
+		if ( empty( $notifiche ) ) {
+			try {
+				$notifiche = $client->notifiche( $uuid );
+			} catch ( WCSDI_SdI_Exception $e ) {
+				// L'endpoint dedicato e' una conferma, non la fonte primaria: se
+				// non risponde si prosegue con quanto gia' letto.
+				$notifiche = array();
+			}
+		}
+
+		foreach ( $notifiche as $notifica ) {
 			self::registra_notifica( $order, $notifica );
 		}
 
@@ -175,7 +186,7 @@ class WCSDI_Fatturazione {
 		// Consegna e mancata consegna chiudono il ciclo: la fattura è
 		// comunque nella disponibilità del destinatario. Lo scarto lo chiude
 		// in senso opposto e richiede una correzione, che resta all'esercente.
-		$definitivi = array( 'delivered', 'not_delivered', 'rejected', 'discarded' );
+		$definitivi = WCSDI_Misure::MARKING_DEFINITIVI;
 		if ( in_array( $stato['marking'], $definitivi, true ) ) {
 			return;
 		}
@@ -254,6 +265,28 @@ class WCSDI_Fatturazione {
 		do_action( 'wcsdi_fatturazione_fallita', $order, $messaggio, $transitorio );
 	}
 
+	/**
+	 * Intervallo prima della prossima interrogazione, in secondi.
+	 *
+	 * La sequenza deve coprire piu' di cinque giorni: l'Agenzia delle Entrate
+	 * dichiara che il Sistema di Interscambio effettua i controlli e la
+	 * consegna «in tempi che possono variare da pochi minuti ad un massimo di
+	 * 5 giorni» quando il volume in lavorazione e' elevato. Una sequenza piu'
+	 * corta smetterebbe di guardare prima che il destinatario abbia finito, e
+	 * l'assenza di ricevute verrebbe scambiata per un esito.
+	 *
+	 * Con MAX_VERIFICHE tentativi la sequenza copre poco piu' di nove giorni.
+	 */
+	private static function attesa_verifica( $eseguite ) {
+		if ( $eseguite < 3 ) {
+			return 300;    // primo quarto d'ora: e' qui che arriva lo scarto
+		}
+		if ( $eseguite < 12 ) {
+			return 3600;   // prime nove ore
+		}
+		return 21600;      // poi ogni sei ore
+	}
+
 	private static function accoda_verifica( $order_id, $eseguite ) {
 		if ( ! function_exists( 'as_schedule_single_action' ) ) {
 			return;
@@ -261,8 +294,7 @@ class WCSDI_Fatturazione {
 		if ( as_has_scheduled_action( self::AZIONE_RICEVUTE, array( 'order_id' => (int) $order_id ), self::GRUPPO ) ) {
 			return;
 		}
-		// Le prime notizie arrivano in fretta, poi il SdI può metterci ore.
-		$attesa = $eseguite < 3 ? 300 : 3600;
+		$attesa = self::attesa_verifica( $eseguite );
 		as_schedule_single_action(
 			time() + $attesa,
 			self::AZIONE_RICEVUTE,
