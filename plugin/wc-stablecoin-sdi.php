@@ -27,8 +27,12 @@ add_action( 'plugins_loaded', function () {
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-sdi-client.php';
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-fattura.php';
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-fatturazione.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-nota-credito.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-scadenza.php';
 
 	WCSDI_Fatturazione::init();
+	WCSDI_Nota_Credito::init();
+	WCSDI_Scadenza::init();
 
 	// La fatturazione parte alla conferma del pagamento, non alla creazione
 	// dell'ordine: l'operazione si considera effettuata quando il pagamento
@@ -44,6 +48,10 @@ add_action( 'plugins_loaded', function () {
 			return;
 		}
 		WCSDI_Fatturazione::accoda( $order_id );
+
+		// L'ordine è pagato: la verifica di scadenza non ha più senso e
+		// lasciarla in coda produrrebbe solo lavoro inutile.
+		WCSDI_Scadenza::annulla( $order_id );
 	}, 10, 4 );
 
 	add_filter( 'woocommerce_payment_gateways', function ( $gateways ) {
@@ -104,14 +112,31 @@ function wcsdi_trova_ordine_da_riferimento( $ref ) {
 
 /**
  * Compatibilità dichiarata con HPOS e checkout a blocchi (RNF-05).
- * L'integrazione del gateway nei blocchi (WC Blocks payment method) è
- * prevista in fase di sviluppo del Capitolo 5.
  */
 add_action( 'before_woocommerce_init', function () {
 	if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
 		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
 		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'cart_checkout_blocks', __FILE__, true );
 	}
+} );
+
+/**
+ * Registrazione del metodo nel checkout a blocchi (RNF-05).
+ *
+ * Il checkout a blocchi si costruisce nel browser e ignora la definizione PHP
+ * del gateway: conosce solo i metodi dichiarati per questa via. Senza, il
+ * pagamento in EURe non compare fra le opzioni.
+ */
+add_action( 'woocommerce_blocks_loaded', function () {
+	$tipo = 'Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType';
+	if ( ! class_exists( $tipo ) ) {
+		return;
+	}
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-blocks.php';
+
+	add_action( 'woocommerce_blocks_payment_method_type_registration', function ( $registry ) {
+		$registry->register( new WCSDI_Blocks() );
+	} );
 } );
 
 /**

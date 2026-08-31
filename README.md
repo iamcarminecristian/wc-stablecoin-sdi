@@ -68,6 +68,10 @@ Alla conferma del pagamento il plugin accoda la fatturazione su Action Scheduler
 
 I dati del cedente e le credenziali si impostano in WooCommerce, nelle opzioni del gateway. I riferimenti dell'incasso on-chain finiscono in `AltriDatiGestionali`, cosi' che dalla sola fattura si risalga alla transazione che l'ha originata.
 
+## Ciclo di vita dell'ordine
+
+Oltre l'incasso, il plugin copre i casi che un negozio incontra davvero. Un pagamento parziale mette l'ordine in sospeso e attende il saldo; un pagamento in eccesso viene segnalato all'esercente per la restituzione. Passata la finestra, un ordine non pagato si chiude, e se aveva ricevuto una somma parziale questa resta evidenziata perche' venga restituita. Un rimborso su un ordine gia' fatturato genera la nota di credito con rinvio alla fattura originaria.
+
 ## Contratto di inoltro
 
 Il cliente non trasferisce EURe direttamente all'esercente: invoca `OrderForwarder`, che inoltra l'importo ed emette un evento con il riferimento dell'ordine. Serve perche' l'emittente lega l'IBAN a un solo indirizzo e un trasferimento ERC-20 non porta causale, quindi due ordini di pari importo nella stessa finestra sarebbero altrimenti indistinguibili. Il contratto non trattiene nulla e non ha poteri amministrativi.

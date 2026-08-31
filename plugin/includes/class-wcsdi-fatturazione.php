@@ -83,7 +83,7 @@ class WCSDI_Fatturazione {
 		$order->update_meta_data( '_wcsdi_fattura_tentativi', $tentativo );
 		$order->save();
 
-		$config = self::configurazione();
+		$config = self::configurazione_cedente();
 		if ( is_wp_error( $config ) ) {
 			// Configurazione incompleta: riprovare non serve, deve
 			// intervenire l'esercente.
@@ -140,7 +140,7 @@ class WCSDI_Fatturazione {
 			return;
 		}
 
-		$config = self::configurazione();
+		$config = self::configurazione_cedente();
 		if ( is_wp_error( $config ) ) {
 			return;
 		}
@@ -273,10 +273,11 @@ class WCSDI_Fatturazione {
 
 	/**
 	 * Dati del cedente e credenziali, dalla configurazione del gateway.
+	 * Pubblica perché serve anche alla nota di credito.
 	 *
 	 * @return array|WP_Error
 	 */
-	private static function configurazione() {
+	public static function configurazione_cedente() {
 		$opzioni = (array) get_option( 'woocommerce_wcsdi_eure_settings', array() );
 		$leggi   = function ( $chiave ) use ( $opzioni ) {
 			return isset( $opzioni[ $chiave ] ) ? trim( (string) $opzioni[ $chiave ] ) : '';

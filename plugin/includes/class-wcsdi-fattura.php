@@ -103,7 +103,7 @@ class WCSDI_Fattura {
 		$w->startElementNS( 'p', 'FatturaElettronica', self::NS_FATTURA );
 		$w->writeAttribute( 'versione', self::FORMATO_TRASMISSIONE );
 
-		self::header( $w, $order, $config, $numero );
+		self::scrivi_header( $w, $order, $config, $numero );
 		self::body( $w, $order, $numero, $righe, $riepilogo, $totale );
 
 		$w->endElement();
@@ -112,7 +112,12 @@ class WCSDI_Fattura {
 		return $w->outputMemory();
 	}
 
-	private static function header( XMLWriter $w, WC_Order $order, array $config, $numero ) {
+	/**
+	 * Intestazione del documento: trasmittente, cedente e cessionario.
+	 * È pubblica perché identica per la fattura e per la nota di credito, e
+	 * duplicarla significherebbe lasciarle divergere alla prima modifica.
+	 */
+	public static function scrivi_header( XMLWriter $w, WC_Order $order, array $config, $numero ) {
 		$w->startElement( 'FatturaElettronicaHeader' );
 
 		$w->startElement( 'DatiTrasmissione' );

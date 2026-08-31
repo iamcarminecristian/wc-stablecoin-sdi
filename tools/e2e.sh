@@ -202,6 +202,58 @@ if [ "$FATTURAZIONE" = "1" ]; then
   echo
 fi
 
+echo "== 9. verifico la scadenza della finestra di pagamento =="
+# Un ordine mai pagato deve chiudersi quando la finestra e' passata.
+SCAD=$(wp eval '
+$g = WC()->payment_gateways()->payment_gateways()["wcsdi_eure"];
+$o = wc_create_order();
+$o->set_currency("EUR");
+$o->set_payment_method($g);
+$item = new WC_Order_Item_Fee();
+$item->set_name("Ordine mai pagato"); $item->set_total(10.00); $item->set_total_tax(2.20);
+$o->add_item($item); $o->set_total("12.20"); $o->save();
+$g->process_payment($o->get_id());
+echo $o->get_id();
+' | tr -d '\r')
+wp eval "WCSDI_Scadenza::verifica($SCAD);" >/dev/null 2>&1 || true
+STATO_SCAD=$(wp eval "echo wc_get_order($SCAD)->get_status();" | tr -d '\r')
+verifica "ordine non pagato chiuso alla scadenza" "$STATO_SCAD" "failed"
+
+# Su un ordine gia' pagato la scadenza non deve avere alcun effetto.
+wp eval "WCSDI_Scadenza::verifica($ID_A);" >/dev/null 2>&1 || true
+STATO_DOPO=$(wp eval "echo wc_get_order($ID_A)->get_status();" | tr -d '\r')
+pagato "la scadenza non tocca un ordine gia' pagato" "$STATO_DOPO"
+
+echo
+echo "== 10. verifico il checkout a blocchi =="
+BLOCKS=$(wp eval '
+if ( ! class_exists("WCSDI_Blocks") ) { echo "classe assente"; return; }
+$b = new WCSDI_Blocks(); $b->initialize();
+$d = $b->get_payment_method_data();
+echo ( $b->is_active() && ! empty($d["title"]) ) ? "ok" : "non attivo";
+' | tr -d '\r')
+verifica "metodo registrato per il checkout a blocchi" "$BLOCKS" "ok"
+
+if [ "$FATTURAZIONE" = "1" ]; then
+  echo
+  echo "== 11. verifico la nota di credito =="
+  # Un rimborso su un ordine gia' fatturato deve produrre la nota.
+  wp eval "wc_create_refund( array( 'order_id' => $ID_A, 'amount' => 10.00, 'reason' => 'Reso parziale di prova' ) );" >/dev/null 2>&1 || true
+  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+  sleep 1
+  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+
+  NOTA=$(wp eval "foreach ( wc_get_order($ID_A)->get_refunds() as \$r ) { if ( \$r->get_meta('_wcsdi_nota_uuid') ) { echo \$r->get_meta('_wcsdi_nota_uuid'); break; } }" | tr -d '\r')
+  if [ -n "$NOTA" ]; then
+    echo "  OK   nota di credito trasmessa ($NOTA)"
+  else
+    echo "  FAIL nota di credito non trasmessa"
+    wp eval "foreach ( array_slice( wc_get_order_notes( array('order_id'=>$ID_A,'limit'=>3) ), 0, 3 ) as \$n ) { echo '       ' . substr( preg_replace('/\s+/', ' ', \$n->content), 0, 170 ) . PHP_EOL; }" 2>/dev/null || true
+    falliti=$((falliti+1))
+  fi
+fi
+
+echo
 echo "--- log del servizio ---"
 cat /tmp/wcsdi-e2e-watcher.log
 

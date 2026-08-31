@@ -171,6 +171,10 @@ class WCSDI_Gateway_EURe extends WC_Payment_Gateway {
 		$order->update_meta_data( '_wcsdi_expires_at', time() + ( (int) $this->get_option( 'payment_window', 60 ) * MINUTE_IN_SECONDS ) );
 		$order->save();
 
+		// Oltre la finestra il riferimento non è più valido e l'ordine va
+		// chiuso, restituendo quanto eventualmente ricevuto (RF-04).
+		WCSDI_Scadenza::pianifica( $order );
+
 		return array(
 			'result'   => 'success',
 			'redirect' => $this->get_return_url( $order ),

@@ -15,8 +15,9 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 1. Spike 1 e 2 consolidati in `watcher/`: rilevamento, finalita', notifica idempotente e rimborso. Verificato end-to-end con `make e2e`
 2. Plugin: gateway, riferimento dell'ordine, endpoint REST con verifica dell'importo e transizione di stato (RF-02, RF-03, RF-04, RNF-03). Restano la fatturazione via Action Scheduler (RF-06, RF-07), la nota di credito (RF-10) e l'integrazione nei checkout blocks
 3. Fatturazione consolidata nel plugin: composizione del tracciato, trasmissione al fornitore e ciclo delle ricevute, orchestrati da Action Scheduler (RF-06, RF-07). Verificata contro il sandbox reale da `make e2e`
-4. Restano la nota di credito (RF-10), la scadenza della finestra di pagamento (RF-04) e l'integrazione nei checkout blocks
+4. Nota di credito (RF-10), scadenza della finestra (RF-04) e checkout a blocchi (RNF-05) completati e verificati
 5. Il rimborso e' scritto ma non ancora eseguito end-to-end: manca `MERCHANT_SIGNER_PRIVATE_KEY` nel `.env`
+6. Restano aperti: repository pubblico (RNF-01), verifica della minimizzazione dei dati (RNF-04) e l'anello del rimborso nel registro di audit (RF-09)
 
 Lo spike 2 resta utile per interrogare il sandbox: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
 
@@ -56,6 +57,12 @@ Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal co
 - `get_items()` senza argomenti restituisce le sole righe prodotto. Le commissioni vanno chieste esplicitamente con `array( 'line_item', 'fee' )`, altrimenti il documento nasce senza corpo e il fornitore lo rifiuta con un messaggio poco chiaro.
 - Gli argomenti delle azioni di Action Scheduler contengono il solo `order_id`. Contatori di tentativi e di verifiche vivono nei metadati dell'ordine, perche' `as_has_scheduled_action` riconosce un'azione gia' in coda solo se gli argomenti coincidono esattamente: con il contatore fra gli argomenti il controllo anti-duplicato non troverebbe mai nulla e ogni conferma accoderebbe una copia. E' un bug gia' occorso.
 - Il numero progressivo si assegna una volta sola e resta nei metadati: un ritentativo non deve consumarne un altro e lasciare un buco nella serie.
+
+## Nota di credito, scadenza, checkout a blocchi
+
+- **Nota di credito**: la chiave del lavoro e' l'identificativo del rimborso, non quello dell'ordine, perche' un ordine puo' essere rimborsato piu' volte e ogni rimborso vuole la propria nota. L'uuid emesso resta annotato sul rimborso: e' cosi' che un riaccodamento non ne produce una seconda. Gli importi restano positivi, e' `TD04` a esprimere il segno. `DatiFattureCollegate` rinvia alla fattura rettificata: senza, la nota resterebbe un documento sospeso.
+- **Scadenza**: l'azione e' pianificata con un margine oltre la finestra dichiarata, altrimenti un pagamento partito all'ultimo minuto non farebbe in tempo a maturare le conferme e si chiuderebbe un ordine di fatto pagato. Quando l'ordine viene pagato l'azione viene annullata. Un ordine scaduto con un incasso parziale conserva `_wcsdi_da_restituire`: la somma va restituita, non trattenuta in silenzio.
+- **Checkout a blocchi**: il metodo va dichiarato una seconda volta in JavaScript, perche' il checkout a blocchi si costruisce nel browser e ignora la definizione PHP del gateway. `plugin/assets/js/blocks.js` usa i globali che WooCommerce espone e non richiede un passo di compilazione: il plugin non ha una toolchain di build e introdurla per poche righe non si giustifica. Allo script arrivano solo titolo e descrizione, mai credenziali o indirizzi.
 
 ## Correlazione pagamento-ordine
 
