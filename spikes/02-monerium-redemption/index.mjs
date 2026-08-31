@@ -135,10 +135,12 @@ function messaggioOrdine(importo, iban) {
   return `Send EUR ${importo} to ${iban} at ${ts}`;
 }
 
-// Unico punto in cui il sistema esercita la capacita' di firma del merchant.
-// E' isolato di proposito: la scelta di dove viva la chiave (processo di
-// servizio, KMS, Safe con ERC-1271) e' architetturale e cambia solo qui.
-// Vedi docs/sessioni/2026-08-31.md e il vincolo RNF-02 in CLAUDE.md.
+// Unico punto in cui il sistema esercita la capacita' di firma del merchant,
+// isolato di proposito perche' e' l'unica cosa da cambiare se il modello
+// evolve. Nel sistema consolidato la chiave vive nel servizio watcher, non
+// nel plugin PHP: vedi "Capacita' di firma" in CLAUDE.md. Qui, nello spike,
+// arriva da SPIKE_SIGNER_PRIVATE_KEY perche' e' un banco di prova su testnet
+// con fondi simulati.
 async function firma(messaggio) {
   const chiave = process.env.SPIKE_SIGNER_PRIVATE_KEY;
   if (!chiave) {
