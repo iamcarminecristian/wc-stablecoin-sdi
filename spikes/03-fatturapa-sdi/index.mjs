@@ -29,6 +29,7 @@
 import { config } from 'dotenv';
 config({ path: new URL('../../.env', import.meta.url) });
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // --- Ordine di esempio (nel sistema integrato arriva da WooCommerce) -------
 const ordine = {
@@ -175,9 +176,13 @@ async function trasmetti(_xml) {
 
 function main() {
   const xml = generaFattura(ordine);
-  mkdirSync('out', { recursive: true });
+  // Come per il .env, la destinazione e' relativa a questo file e non alla
+  // cwd: l'XML finisce sempre in spikes/03-fatturapa-sdi/out/, da qualunque
+  // directory si lanci lo spike.
+  const dirOut = fileURLToPath(new URL('out/', import.meta.url));
+  mkdirSync(dirOut, { recursive: true });
   const nomeFile = `IT${ordine.cedente.partitaIva}_00001.xml`;
-  writeFileSync(`out/${nomeFile}`, xml, 'utf8');
+  writeFileSync(`${dirOut}${nomeFile}`, xml, 'utf8');
   console.log(`[OK] generato out/${nomeFile} (${xml.length} byte)`);
   return trasmetti(xml);
 }
