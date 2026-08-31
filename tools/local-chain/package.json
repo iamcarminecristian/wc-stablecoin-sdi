@@ -7,6 +7,11 @@
     "deploy": "node deploy.mjs",
     "pay": "node pay.mjs"
   },
-  "dependencies": { "viem": "^2.21.0" },
-  "devDependencies": { "solc": "^0.8.26" }
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "solc": "^0.8.26"
+  }
 }

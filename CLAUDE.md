@@ -73,6 +73,8 @@ Il protocollo KPI (documento su Drive) chiede che i marcatori t0-t5 siano regist
 - **Le due latenze vanno tenute distinte**: conferma dell'incasso (t2-t0), che si confronta con l'autorizzazione di una carta, e regolamento (t5-t0), che si confronta con l'accredito. Confonderle rende il raffronto attaccabile, ed e' il punto su cui il protocollo insiste di piu'.
 - Il costo di rete e' letto dalla ricevuta della transazione, non stimato.
 - `wc_get_orders` restituisce anche i rimborsi, che non espongono `get_payment_method()`: interrogarli come ordini produce un errore fatale. Verificare sempre `instanceof WC_Order`.
+- **Le latenze misurate sulla chain di sviluppo non sono significative.** Anvil genera i blocchi su richiesta e il loro orario non concorda con quello del server: si ottengono anche latenze negative. Il dataset le marca con `anomalia_orologio` e vanno scartate dall'analisi. Le misure buone si fanno su rete di prova con NTP attivo, come prescrive il protocollo.
+- La campagna si lancia con `tools/local-chain/campagna.mjs`. `--dry-run` mostra il piano senza toccare nulla.
 
 ## Correlazione pagamento-ordine
 

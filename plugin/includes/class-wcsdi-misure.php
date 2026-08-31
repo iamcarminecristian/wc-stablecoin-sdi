@@ -113,7 +113,26 @@ class WCSDI_Misure {
 			'fattura_accettata' => self::fattura_accettata( $fattura ) ? '1' : '0',
 			'imponibile'        => wc_format_decimal( (string) ( (float) $order->get_total() - (float) $order->get_total_tax() ), 2 ),
 			'imposta'           => wc_format_decimal( (string) $order->get_total_tax(), 2 ),
+			// Una latenza negativa non è un evento fisico: significa che
+			// l'orologio del server e quello della catena non concordano. Il
+			// protocollo richiede la sincronizzazione NTP, e la riga va
+			// scartata dall'analisi anziché passare inosservata fra le altre.
+			'anomalia_orologio' => self::anomalia( $delta( 't0', 't2' ), $delta( 't0', 't3' ) ) ? '1' : '0',
 		);
+	}
+
+	/**
+	 * Segnala misure incoerenti con lo scorrere del tempo. Si verificano
+	 * quando i due orologi non sono allineati, tipicamente su una catena di
+	 * sviluppo che genera i blocchi su richiesta.
+	 */
+	private static function anomalia( $conferma, $riconciliazione ) {
+		foreach ( array( $conferma, $riconciliazione ) as $v ) {
+			if ( null !== $v && $v < 0 ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
