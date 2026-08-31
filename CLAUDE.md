@@ -36,6 +36,16 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 - Il Codice Destinatario da registrare sull'Agenzia delle Entrate serve solo al ciclo passivo: per il nostro caso, solo ciclo attivo, non serve.
 - **Aperto**: non e' confermato se il sandbox raggiunga il vero canale di test SdI dell'Agenzia delle Entrate o simuli internamente le ricevute. La risposta condiziona il protocollo KPI del Capitolo 6.
 
+## Correlazione pagamento-ordine
+
+L'emittente lega l'IBAN di accredito a un solo indirizzo, quindi non si puo' assegnare un indirizzo distinto a ogni ordine, e un trasferimento ERC-20 non porta causale. Il pagamento passa percio' dal contratto in `contracts/src/OrderForwarder.sol`, che sposta i token dal cliente all'esercente ed emette `OrderPaid(orderRef, payer, amount)`.
+
+- Il contratto non custodisce: `transferFrom` va direttamente da cliente a esercente. Non ha proprietario, non espone prelievi, token e indirizzo di incasso sono immutabili. Non aggiungere funzioni amministrative: e' proprio la loro assenza a soddisfare RNF-02.
+- `payWithPermit` tiene il permit in try/catch di proposito: una firma EIP-2612 in mempool puo' essere anticipata da chiunque, e il permit fallito non deve trascinare il pagamento. Non "sistemare" rimuovendo il catch.
+- Il rilevamento osserva `OrderPaid` se `FORWARDER_ADDRESS` e' valorizzato, altrimenti ripiega su `Transfer`. La modalita' di ripiego serve al confronto in tesi, non e' codice morto.
+- `orderRef` e' un valore derivato senza contenuto informativo sul cliente (RNF-04). Non passare l'id ordine in chiaro.
+- Test: `cd contracts && npm test` con anvil attivo (`make up`).
+
 ## Vincoli non negoziabili
 - **Gate fiscale**: MP05, AltriDatiGestionali (TX-HASH/CHAIN/PAY-ADDR) e momento di effettuazione sono scelte in attesa di validazione del relatore. Non modificarle né consolidare lo spike 3 nel plugin senza indicazione esplicita di Carmine.
 - **Non-custodial (RNF-02)**: mai chiavi private nel codice o nella configurazione del plugin; l'unica chiave presente nel repo è quella pubblica di default di anvil in `tools/local-chain/chain.mjs`, priva di valore.

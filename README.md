@@ -6,6 +6,7 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 
 ```
 plugin/             plugin WooCommerce (PHP): gateway, endpoint REST, configurazione
+contracts/          contratto di inoltro dei pagamenti (Solidity) + compile, deploy, test
 watcher/            servizio Node di rilevamento (nasce dal consolidamento dello spike 1)
 spikes/             tre spike isolati, in ordine, ciascuno con criterio di uscita
 tools/local-chain/  MockEURe + script di deploy e pagamento simulato su anvil
@@ -51,6 +52,20 @@ Lo spike 2 va eseguito per primo: il suo output fornisce il `TOKEN_ADDRESS` che 
 3. **03-fatturapa-sdi**: genera subito la fattura di esempio in `out/` (tracciato 1.9.1, mappatura §4.5: TD01, EUR, MP05, riferimenti on-chain in AltriDatiGestionali dentro DettaglioLinee); invio al SdI di test da completare dopo l'attivazione openapi.it. Uscita: ricevuta di consegna dal SdI di test.
 
 **Gate fiscale**: le scelte MP05 / AltriDatiGestionali / momento di effettuazione sono in attesa di validazione del relatore; non consolidare lo spike 3 nel plugin prima dell'ok (vedi CLAUDE.md).
+
+## Contratto di inoltro
+
+Il cliente non trasferisce EURe direttamente all'esercente: invoca `OrderForwarder`, che inoltra l'importo ed emette un evento con il riferimento dell'ordine. Serve perche' l'emittente lega l'IBAN a un solo indirizzo e un trasferimento ERC-20 non porta causale, quindi due ordini di pari importo nella stessa finestra sarebbero altrimenti indistinguibili. Il contratto non trattiene nulla e non ha poteri amministrativi.
+
+```bash
+cd contracts
+npm install && npm run compile
+npm test                              # verifiche su anvil (make up)
+npm run deploy                        # chain locale
+DEPLOY_TARGET=live DEPLOYER_PRIVATE_KEY=0x... npm run deploy   # rete di RPC_URL
+```
+
+Il deploy stampa l'indirizzo da mettere in `FORWARDER_ADDRESS` nel `.env`.
 
 ## Collegamento con la tesi
 
