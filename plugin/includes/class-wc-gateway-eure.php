@@ -101,10 +101,32 @@ class WCSDI_Gateway_EURe extends WC_Payment_Gateway {
 
 			// --- Fatturazione elettronica (RF-06, RF-07, §4.5) ---
 			'sdi_section'   => array( 'title' => 'Fatturazione elettronica (SdI via openapi.it)', 'type' => 'title' ),
-			'openapi_token' => array( 'title' => 'openapi.it token', 'type' => 'password' ),
+			'openapi_base_url' => array(
+				'title'       => 'Endpoint del fornitore',
+				'type'        => 'text',
+				'default'     => 'https://test.sdi.openapi.it',
+				'description' => 'Sandbox: <code>https://test.sdi.openapi.it</code>. Produzione: <code>https://sdi.openapi.it</code>.',
+			),
+			'openapi_token' => array(
+				'title'       => 'Token del fornitore',
+				'type'        => 'password',
+				'description' => 'Token della sezione Autenticazione della dashboard, non la API Key mostrata piu\' in alto: sono due credenziali distinte.',
+			),
 			'cedente_piva'  => array( 'title' => 'Partita IVA cedente', 'type' => 'text' ),
-			'cedente_cf'    => array( 'title' => 'Codice fiscale cedente', 'type' => 'text' ),
+			'cedente_cf'    => array(
+				'title'       => 'Codice fiscale cedente',
+				'type'        => 'text',
+				'description' => 'Usato come identificativo se la partita IVA non e\' valorizzata. Deve coincidere con quello registrato presso il fornitore.',
+			),
 			'cedente_denominazione' => array( 'title' => 'Denominazione cedente', 'type' => 'text' ),
+			'cedente_indirizzo'     => array( 'title' => 'Indirizzo (sede)', 'type' => 'text' ),
+			'cedente_cap'           => array( 'title' => 'CAP (sede)', 'type' => 'text' ),
+			'cedente_comune'        => array( 'title' => 'Comune (sede)', 'type' => 'text' ),
+			'cedente_provincia'     => array(
+				'title'       => 'Provincia (sede)',
+				'type'        => 'text',
+				'description' => 'Sigla di due lettere, ad esempio RM.',
+			),
 			'cedente_regime'        => array(
 				'title'   => 'Regime fiscale',
 				'type'    => 'text',

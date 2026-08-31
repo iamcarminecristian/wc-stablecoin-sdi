@@ -22,6 +22,14 @@ CLIENTE_KEY=0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 SECRET=$(grep -E '^WCSDI_SHARED_SECRET=' .env | cut -d= -f2-)
 [ -n "$SECRET" ] || { echo "WCSDI_SHARED_SECRET assente dal .env"; exit 1; }
 
+# La fatturazione si prova solo se il sandbox del fornitore e' configurato:
+# senza credenziali il resto del flusso resta comunque verificabile offline.
+SDI_TOKEN=$(grep -E '^OPENAPI_SDI_TOKEN=' .env | cut -d= -f2-)
+SDI_BASE=$(grep -E '^OPENAPI_SDI_BASE_URL=' .env | cut -d= -f2-)
+SDI_FISCAL=$(grep -E '^OPENAPI_FISCAL_ID=' .env | cut -d= -f2-)
+FATTURAZIONE=0
+[ -n "$SDI_TOKEN" ] && [ -n "$SDI_FISCAL" ] && FATTURAZIONE=1
+
 wp() { docker compose run --rm -T wpcli "$@"; }
 
 echo "== 1. configuro il gateway =="
@@ -34,7 +42,16 @@ wp option update woocommerce_wcsdi_eure_settings --format=json "$(cat <<JSON
   "receive_address": "$MERCHANT",
   "forwarder_address": "$FORWARDER",
   "confirmations": "2",
-  "payment_window": "60"
+  "payment_window": "60",
+  "openapi_base_url": "${SDI_BASE}",
+  "openapi_token": "${SDI_TOKEN}",
+  "cedente_cf": "${SDI_FISCAL}",
+  "cedente_denominazione": "Carmine Cristian Cruoglio",
+  "cedente_indirizzo": "Via di Test, 1",
+  "cedente_cap": "00100",
+  "cedente_comune": "Roma",
+  "cedente_provincia": "RM",
+  "cedente_regime": "RF01"
 }
 JSON
 )" >/dev/null
@@ -48,13 +65,27 @@ echo "== 2. creo due ordini di pari importo =="
 CREA='
 $g = WC()->payment_gateways()->payment_gateways()["wcsdi_eure"];
 $o = wc_create_order();
-$o->add_product( null, 1 );
 $o->set_currency("EUR");
 $o->set_payment_method($g);
+$o->set_address( array(
+  "first_name" => "Mario", "last_name" => "Rossi",
+  "address_1" => "Via del Cliente, 2", "postcode" => "00100",
+  "city" => "Roma", "state" => "RM", "country" => "IT",
+), "billing" );
+$o->update_meta_data("_wcsdi_codice_fiscale", "RSSMRA80A01H501U");
+$item = new WC_Order_Item_Fee();
+$item->set_name("Servizio di prova");
+$item->set_total(40.90);
+$item->set_total_tax(9.00);
+$o->add_item($item);
 $o->set_total("49.90");
 $o->save();
 $r = $g->process_payment($o->get_id());
-echo $o->get_id() . " " . $o->get_meta("_wcsdi_order_ref") . "\n";
+// process_payment lavora su una propria istanza: il riferimento va
+// riletto da una lettura fresca, non dall oggetto creato qui.
+$fresco = wc_get_order($o->get_id());
+echo $o->get_id() . " " . $fresco->get_meta("_wcsdi_order_ref") . "
+";
 '
 ORD_A=$(wp eval "$CREA" | tr -d '\r')
 ORD_B=$(wp eval "$CREA" | tr -d '\r')
@@ -129,6 +160,48 @@ CODICE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:8080/?
 verifica "notifica senza segreto respinta" "$CODICE" "401"
 
 echo
+if [ "$FATTURAZIONE" = "1" ]; then
+  echo "== 8. verifico la fatturazione elettronica =="
+  # Action Scheduler non gira da solo in un ambiente senza traffico: la coda
+  # va drenata a mano, ed e' anche il modo piu' onesto di provarla.
+  # Il runner via CLI non trova il gruppo in un'installazione senza traffico:
+  # si esegue direttamente la coda dall'interno di WordPress.
+  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+  sleep 2
+  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+
+  UUID_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_uuid');" | tr -d '\r')
+  NUM_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_numero');" | tr -d '\r')
+  STATO_F=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_stato');" | tr -d '\r')
+  ERR_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_errore');" | tr -d '\r')
+
+  if [ -n "$UUID_A" ]; then
+    echo "  OK   fattura trasmessa (numero $NUM_A, stato $STATO_F)"
+    echo "       identificativo $UUID_A"
+  else
+    echo "  FAIL fattura non trasmessa per l'ordine $ID_A"
+    [ -n "$ERR_A" ] && echo "       errore: $ERR_A"
+    falliti=$((falliti+1))
+  fi
+
+  # Il numero progressivo non deve essere consumato due volte, altrimenti la
+  # serie avrebbe duplicati o buchi.
+  NUM_B=$(wp eval "echo wc_get_order($ID_B)->get_meta('_wcsdi_fattura_numero');" | tr -d '\r')
+  if [ -n "$NUM_A" ] && [ -n "$NUM_B" ] && [ "$NUM_A" != "$NUM_B" ]; then
+    echo "  OK   i due ordini hanno numeri di fattura distinti ($NUM_A, $NUM_B)"
+  else
+    echo "  FAIL numerazione non distinta (A='$NUM_A', B='$NUM_B')"
+    falliti=$((falliti+1))
+  fi
+
+  # Riaccodare non deve produrre una seconda trasmissione (RNF-03).
+  wp eval "WCSDI_Fatturazione::accoda($ID_A);" >/dev/null 2>&1 || true
+  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+  UUID_A2=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_uuid');" | tr -d '\r')
+  verifica "un secondo accodamento non ritrasmette" "$UUID_A2" "$UUID_A"
+  echo
+fi
+
 echo "--- log del servizio ---"
 cat /tmp/wcsdi-e2e-watcher.log
 

@@ -14,8 +14,9 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 ## Stato e ordine di lavoro
 1. Spike 1 e 2 consolidati in `watcher/`: rilevamento, finalita', notifica idempotente e rimborso. Verificato end-to-end con `make e2e`
 2. Plugin: gateway, riferimento dell'ordine, endpoint REST con verifica dell'importo e transizione di stato (RF-02, RF-03, RF-04, RNF-03). Restano la fatturazione via Action Scheduler (RF-06, RF-07), la nota di credito (RF-10) e l'integrazione nei checkout blocks
-3. Spike 3 (FatturaPA/SdI): generazione XML 1.9.1 completa e prima fattura di test accettata dal sandbox; `trasmetti()` e' ancora uno stub, l'invio va portato nel plugin
-4. Il rimborso e' scritto ma non ancora eseguito end-to-end: manca `MERCHANT_SIGNER_PRIVATE_KEY` nel `.env`
+3. Fatturazione consolidata nel plugin: composizione del tracciato, trasmissione al fornitore e ciclo delle ricevute, orchestrati da Action Scheduler (RF-06, RF-07). Verificata contro il sandbox reale da `make e2e`
+4. Restano la nota di credito (RF-10), la scadenza della finestra di pagamento (RF-04) e l'integrazione nei checkout blocks
+5. Il rimborso e' scritto ma non ancora eseguito end-to-end: manca `MERCHANT_SIGNER_PRIVATE_KEY` nel `.env`
 
 Lo spike 2 resta utile per interrogare il sandbox: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
 
@@ -47,6 +48,15 @@ Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal co
 - La ricerca non filtra per stato, altrimenti una notifica ripetuta su un ordine gia' pagato non riconoscerebbe il duplicato e RNF-03 cadrebbe proprio nel caso che l'idempotenza esiste per coprire.
 - L'immagine di WordPress non riscrive `/wp-json/`: la REST API si raggiunge come `?rest_route=/wcsdi/v1/...`, forma gia' impostata nel `.env.example`.
 
+## Fatturazione elettronica
+
+- **Il documento si invia come XML grezzo con `Content-Type: application/xml`.** Il fornitore restituisce poi la fattura come struttura JSON in snake_case, ma non la accetta in quella forma: inviarla come JSON risponde 422 con `Parsing error: malformed XML` (codice 802). La forma di lettura non e' la forma di scrittura.
+- L'endpoint e' `POST /invoices`, non `/IT/invoices`, che risponde 401 da uno storage estraneo e trae in inganno. Lo stato si rilegge da `GET /invoices/{uuid}`, che porta `marking` e `notifications`.
+- La composizione passa da `XMLWriter`, non da concatenazione: i valori arrivano dall'ordine e quindi dal cliente, e l'escaping non puo' essere lasciato a chi scrive il template. L'ordine degli elementi segue le sequenze del tracciato: un elemento fuori posto fa scartare la fattura.
+- `get_items()` senza argomenti restituisce le sole righe prodotto. Le commissioni vanno chieste esplicitamente con `array( 'line_item', 'fee' )`, altrimenti il documento nasce senza corpo e il fornitore lo rifiuta con un messaggio poco chiaro.
+- Gli argomenti delle azioni di Action Scheduler contengono il solo `order_id`. Contatori di tentativi e di verifiche vivono nei metadati dell'ordine, perche' `as_has_scheduled_action` riconosce un'azione gia' in coda solo se gli argomenti coincidono esattamente: con il contatore fra gli argomenti il controllo anti-duplicato non troverebbe mai nulla e ogni conferma accoderebbe una copia. E' un bug gia' occorso.
+- Il numero progressivo si assegna una volta sola e resta nei metadati: un ritentativo non deve consumarne un altro e lasciare un buco nella serie.
+
 ## Correlazione pagamento-ordine
 
 L'emittente lega l'IBAN di accredito a un solo indirizzo, quindi non si puo' assegnare un indirizzo distinto a ogni ordine, e un trasferimento ERC-20 non porta causale. Il pagamento passa percio' dal contratto in `contracts/src/OrderForwarder.sol`, che sposta i token dal cliente all'esercente ed emette `OrderPaid(orderRef, payer, amount)`.
@@ -58,7 +68,7 @@ L'emittente lega l'IBAN di accredito a un solo indirizzo, quindi non si puo' ass
 - Test: `cd contracts && npm test` con anvil attivo (`make up`).
 
 ## Vincoli non negoziabili
-- **Gate fiscale**: MP05, AltriDatiGestionali (TX-HASH/CHAIN/PAY-ADDR) e momento di effettuazione sono scelte in attesa di validazione del relatore. Non modificarle né consolidare lo spike 3 nel plugin senza indicazione esplicita di Carmine.
+- **Gate fiscale**: MP05, AltriDatiGestionali (TX-HASH/CHAIN/PAY-ADDR), TD01, TP02 e il momento di effettuazione restano scelte in attesa di validazione del relatore. Lo spike 3 e' stato consolidato nel plugin su indicazione di Carmine, ma le scelte sono raccolte nelle costanti in testa a `WCSDI_Fattura`, sotto un'intestazione esplicita: cambiarle quando il gate si sciogliera' deve restare una modifica di poche righe in un punto solo. Non spargerle nel resto della composizione.
 - **Non-custodial (RNF-02)**: mai chiavi private nel codice o nella configurazione del plugin; l'unica chiave presente nel repo è quella pubblica di default di anvil in `tools/local-chain/chain.mjs`, priva di valore.
 - **Capacità di firma**: il redemption Monerium richiede una firma EIP-191 del wallet che detiene gli EURe, quindi il redemption automatico impone che il merchant deleghi al proprio sistema una capacità di firma. La chiave vive nel servizio `watcher/`, processo separato senza superficie HTTP pubblica; il plugin PHP non la vede mai e comunica col watcher solo via REST autenticata. RNF-02 resta pienamente rispettato: riguarda i fondi e le chiavi del cliente, che il sistema non tocca in nessun momento. Il perimetro di rischio residuo è il saldo in transito sull'indirizzo di incasso, contenuto strutturalmente dal fatto che il riscatto parte subito dopo la conferma. Non spostare la chiave nel plugin, in `wp-config.php` o nelle opzioni WordPress per nessun motivo.
 - **Idempotenza (RNF-03)**: ogni operazione con effetti esterni deve avere chiave idempotente; per gli eventi on-chain è `txHash:logIndex`.

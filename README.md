@@ -62,6 +62,12 @@ make e2e      # due ordini di pari importo, pagati on-chain, fino allo stato fin
 
 Copre i passi da 1 a 3 del flusso nominale: creazione dell'ordine con il proprio riferimento, pagamento tramite il contratto di inoltro, rilevamento con criterio di finalita', verifica dell'importo e transizione di stato. Verifica anche che una notifica ripetuta sia riconosciuta come duplicata e che una priva del segreto condiviso sia respinta.
 
+## Fatturazione elettronica
+
+Alla conferma del pagamento il plugin accoda la fatturazione su Action Scheduler: compone il tracciato FatturaPA dall'ordine, lo trasmette al fornitore accreditato e ne segue lo stato fino a un esito definitivo. I ritentativi hanno attesa crescente e distinguono i guasti transitori, che si riprovano da soli, da quelli definitivi, che vengono portati all'attenzione dell'esercente sull'ordine.
+
+I dati del cedente e le credenziali si impostano in WooCommerce, nelle opzioni del gateway. I riferimenti dell'incasso on-chain finiscono in `AltriDatiGestionali`, cosi' che dalla sola fattura si risalga alla transazione che l'ha originata.
+
 ## Contratto di inoltro
 
 Il cliente non trasferisce EURe direttamente all'esercente: invoca `OrderForwarder`, che inoltra l'importo ed emette un evento con il riferimento dell'ordine. Serve perche' l'emittente lega l'IBAN a un solo indirizzo e un trasferimento ERC-20 non porta causale, quindi due ordini di pari importo nella stessa finestra sarebbero altrimenti indistinguibili. Il contratto non trattiene nulla e non ha poteri amministrativi.

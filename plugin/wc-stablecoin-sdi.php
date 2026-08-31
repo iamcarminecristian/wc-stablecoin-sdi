@@ -22,6 +22,29 @@ add_action( 'plugins_loaded', function () {
 		return; // WooCommerce non attivo.
 	}
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wc-gateway-eure.php';
+	// Il client definisce WCSDI_SdI_Exception, che la composizione solleva:
+	// va caricato per primo.
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-sdi-client.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-fattura.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-fatturazione.php';
+
+	WCSDI_Fatturazione::init();
+
+	// La fatturazione parte alla conferma del pagamento, non alla creazione
+	// dell'ordine: l'operazione si considera effettuata quando il pagamento
+	// on-chain si perfeziona (§4.5). L'aggancio passa da woocommerce_order_
+	// status_changed anziché da payment_complete perché copre anche gli ordini
+	// che WooCommerce porta direttamente a completed, come quelli senza righe
+	// da spedire.
+	add_action( 'woocommerce_order_status_changed', function ( $order_id, $vecchio, $nuovo, $order ) {
+		if ( ! in_array( $nuovo, array( 'processing', 'completed' ), true ) ) {
+			return;
+		}
+		if ( ! $order instanceof WC_Order || 'wcsdi_eure' !== $order->get_payment_method() ) {
+			return;
+		}
+		WCSDI_Fatturazione::accoda( $order_id );
+	}, 10, 4 );
 
 	add_filter( 'woocommerce_payment_gateways', function ( $gateways ) {
 		$gateways[] = WCSDI_Gateway_EURe::class;
@@ -179,8 +202,9 @@ add_action( 'rest_api_init', function () {
 
 			$order->save();
 
-			// TODO(cap.5): accodamento della fatturazione via Action Scheduler
-			// (RF-06). Il rimborso è disposto dal servizio di rilevamento.
+			// La fatturazione parte dal cambio di stato dell'ordine, non da
+			// qui: cosi' copre anche gli ordini portati a pagato per altre
+			// vie. Il rimborso e' disposto dal servizio di rilevamento.
 
 			return array(
 				'status'   => 'accepted',
