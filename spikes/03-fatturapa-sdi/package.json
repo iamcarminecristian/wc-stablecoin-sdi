@@ -1,0 +1,7 @@
+{
+  "name": "spike-03-fatturapa-sdi",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": { "dotenv": "^16.4.5" }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "spike-01-onchain-detection",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node index.mjs" },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "viem": "^2.21.0"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "wcsdi-watcher",
+  "private": true,
+  "type": "module",
+  "description": "Servizio di rilevamento on-chain. Nasce dal consolidamento dello spike 1: sottoscrizione multi-ordine, persistenza dello stato, notifiche autenticate al plugin (POST /wcsdi/v1/payment-confirmed).",
+  "scripts": { "start": "node src/index.mjs" }
+}

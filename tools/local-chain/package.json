@@ -1,0 +1,12 @@
+{
+  "name": "wcsdi-local-chain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "node compile.mjs",
+    "deploy": "node deploy.mjs",
+    "pay": "node pay.mjs"
+  },
+  "dependencies": { "viem": "^2.21.0" },
+  "devDependencies": { "solc": "^0.8.26" }
+}

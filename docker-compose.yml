@@ -1,0 +1,73 @@
+# Ambiente di sviluppo completo: WordPress+WooCommerce, chain EVM locale,
+# watcher (profilo "full", si attiva dopo il consolidamento dello spike 1).
+# Comandi: make init | make up | make down | make nuke | make demo
+
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 30
+
+  wordpress:
+    image: wordpress:php8.2-apache
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugin:/var/www/html/wp-content/plugins/wc-stablecoin-sdi
+
+  # wp-cli condivide filesystem e DB di wordpress; usato da setup.sh via "run".
+  wpcli:
+    image: wordpress:cli-php8.2
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugin:/var/www/html/wp-content/plugins/wc-stablecoin-sdi
+    entrypoint: ["wp"]
+    profiles: ["tools"]
+
+  # Chain EVM locale (anvil): per spike 1 e demo di pagamento offline.
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:stable
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--chain-id", "31337"]
+    ports:
+      - "8545:8545"
+
+  watcher:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./watcher:/app
+    command: ["node", "src/index.mjs"]
+    depends_on:
+      - anvil
+    profiles: ["full"]
+
+volumes:
+  db_data:
+  wp_data:

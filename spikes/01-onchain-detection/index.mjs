@@ -1,0 +1,99 @@
+// ============================================================================
+// SPIKE 1 — Rilevamento pagamento on-chain (ERC-20 Transfer verso indirizzo)
+//
+// Obiettivo dello spike: dimostrare in isolamento che un processo Node può
+// (1) osservare gli eventi Transfer di un token ERC-20 verso un indirizzo
+// di incasso, (2) applicare un criterio di finalità a N conferme,
+// (3) produrre un evento "pagamento confermato" idempotente.
+//
+// Esecuzione:
+//   cp .env.example .env   (compilare i valori)
+//   npm install
+//   npm start
+//
+// Criterio di uscita dello spike: transazione di test su testnet rilevata
+// e confermata con log coerente (txHash, logIndex, importo, blocco).
+// ============================================================================
+
+import 'dotenv/config';
+import { createPublicClient, http, parseAbiItem, formatUnits, getAddress } from 'viem';
+
+const RPC_URL       = required('RPC_URL');
+const TOKEN_ADDRESS = getAddress(required('TOKEN_ADDRESS'));
+const WATCH_ADDRESS = getAddress(required('WATCH_ADDRESS'));
+const CONFIRMATIONS = BigInt(process.env.CONFIRMATIONS ?? '12');
+const POLL_MS       = Number(process.env.POLL_MS ?? '5000');
+const DECIMALS      = Number(process.env.TOKEN_DECIMALS ?? '18');
+
+const transferEvent = parseAbiItem(
+  'event Transfer(address indexed from, address indexed to, uint256 value)'
+);
+
+const client = createPublicClient({ transport: http(RPC_URL) });
+
+// Stato dello spike: pagamenti visti (provvisori) e confermati.
+// Chiave idempotente: `${txHash}:${logIndex}` (cfr. RNF-03 della tesi).
+const seen = new Map();      // key -> { blockNumber, value, from }
+const confirmed = new Set(); // key già notificate
+
+function required(name) {
+  const v = process.env[name];
+  if (!v) { console.error(`Variabile mancante: ${name} (vedi .env.example)`); process.exit(1); }
+  return v;
+}
+
+async function scan(fromBlock, toBlock) {
+  const logs = await client.getLogs({
+    address: TOKEN_ADDRESS,
+    event: transferEvent,
+    args: { to: WATCH_ADDRESS },
+    fromBlock,
+    toBlock,
+  });
+  for (const log of logs) {
+    const key = `${log.transactionHash}:${log.logIndex}`;
+    if (!seen.has(key)) {
+      seen.set(key, { blockNumber: log.blockNumber, value: log.args.value, from: log.args.from });
+      console.log(`[VISTO]      ${key} | ${formatUnits(log.args.value, DECIMALS)} | blocco ${log.blockNumber}`);
+    }
+  }
+}
+
+function checkConfirmations(head) {
+  for (const [key, p] of seen) {
+    if (confirmed.has(key)) continue;
+    const depth = head - p.blockNumber;
+    if (depth >= CONFIRMATIONS) {
+      confirmed.add(key);
+      // Nel sistema integrato questo è il punto in cui il watcher notifica il
+      // plugin via REST (POST /wcsdi/v1/payment-confirmed, autenticato).
+      console.log(`[CONFERMATO] ${key} | ${formatUnits(p.value, DECIMALS)} | profondità ${depth} blocchi`);
+    }
+  }
+}
+
+async function main() {
+  console.log(`Spike 1 avviato. Token ${TOKEN_ADDRESS}, incasso ${WATCH_ADDRESS}, finalità ${CONFIRMATIONS} conferme.`);
+  let last = await client.getBlockNumber();
+  console.log(`Blocco di partenza: ${last}`);
+
+  // Nota riorganizzazioni: gli eventi restano "visti" finché non raggiungono
+  // la profondità richiesta; un evento decaduto per riorg semplicemente non
+  // verrà più restituito dai getLogs successivi né raggiungerà la conferma.
+  // La gestione completa (invalidazione esplicita) è demandata al watcher.
+  for (;;) {
+    try {
+      const head = await client.getBlockNumber();
+      if (head > last) {
+        await scan(last + 1n, head);
+        last = head;
+      }
+      checkConfirmations(head);
+    } catch (err) {
+      console.error(`[ERRORE] ${err.message ?? err}`);
+    }
+    await new Promise((r) => setTimeout(r, POLL_MS));
+  }
+}
+
+main();
