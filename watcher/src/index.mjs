@@ -12,7 +12,7 @@
 import { createPublicClient, http, parseAbiItem, formatUnits } from 'viem';
 
 import {
-  RPC_URL, FORWARDER, CONFIRMATIONS, POLL_MS, DECIMALS, MAX_BLOCK_SPAN,
+  RPC_URL, CHAIN_ID, FORWARDER, CONFIRMATIONS, POLL_MS, DECIMALS, MAX_BLOCK_SPAN,
   STATE_FILE, START_BLOCK, REDEEM_ENABLED,
 } from './config.mjs';
 import { caricaStato, salvaStato } from './state.mjs';
@@ -111,6 +111,7 @@ async function confermaEnotifica(testa) {
     const t2 = await istanteBlocco(p.blocco + CONFIRMATIONS);
 
     const esito = await notificaPagamento({
+      chainId: CHAIN_ID,
       orderRef: p.orderRef,
       txHash: p.txHash,
       logIndex: p.logIndex,

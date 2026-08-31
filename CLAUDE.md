@@ -67,6 +67,15 @@ Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal co
 - **Scadenza**: l'azione e' pianificata con un margine oltre la finestra dichiarata, altrimenti un pagamento partito all'ultimo minuto non farebbe in tempo a maturare le conferme e si chiuderebbe un ordine di fatto pagato. Quando l'ordine viene pagato l'azione viene annullata. Un ordine scaduto con un incasso parziale conserva `_wcsdi_da_restituire`: la somma va restituita, non trattenuta in silenzio.
 - **Checkout a blocchi**: il metodo va dichiarato una seconda volta in JavaScript, perche' il checkout a blocchi si costruisce nel browser e ignora la definizione PHP del gateway. `plugin/assets/js/blocks.js` usa i globali che WooCommerce espone e non richiede un passo di compilazione: il plugin non ha una toolchain di build e introdurla per poche righe non si giustifica. Allo script arrivano solo titolo e descrizione, mai credenziali o indirizzi.
 
+## Ambiente di misura su Base Sepolia
+
+- Contratto di inoltro pubblicato: `0x91f7B2252256a112Fe12Ee79BA58e1cb290D21C3`
+- Token EURe: `0x29F37F6adCa168B79B8d9567eab9BE3fBF21db85`
+- Indirizzo di incasso: quello di `MERCHANT_SIGNER_PRIVATE_KEY`, con l'IBAN collegato
+- `CAMPAGNA_PAYER_KEY` e' il cliente simulato: identita' distinta dall'esercente, perche' un pagamento verso se stessi non riproduce il flusso
+- I fondi ruotano fra i due: la campagna ricarica il cliente prima di partire e si ferma se non bastano
+- Dataset in `docs/dataset/`, esportato con `wp wcsdi export`
+
 ## Strumentazione per il Capitolo 6
 
 Il protocollo KPI (documento su Drive) chiede che i marcatori t0-t5 siano registrati dal codice, non ricostruiti a posteriori dai log. `WCSDI_Misure` li tiene sull'ordine, `wp wcsdi export` produce il dataset.
@@ -76,6 +85,7 @@ Il protocollo KPI (documento su Drive) chiede che i marcatori t0-t5 siano regist
 - **Le due latenze vanno tenute distinte**: conferma dell'incasso (t2-t0), che si confronta con l'autorizzazione di una carta, e regolamento (t5-t0), che si confronta con l'accredito. Confonderle rende il raffronto attaccabile, ed e' il punto su cui il protocollo insiste di piu'.
 - Il costo di rete e' letto dalla ricevuta della transazione, non stimato.
 - `wc_get_orders` restituisce anche i rimborsi, che non espongono `get_payment_method()`: interrogarli come ordini produce un errore fatale. Verificare sempre `instanceof WC_Order`.
+- **Filtrare sempre per `chain_id`.** Il campo `chain` riporta il nome configurato nel gateway, che puo' non coincidere con la rete realmente osservata: senza il filtro numerico le misure locali si mescolano a quelle di rete.
 - **Le latenze misurate sulla chain di sviluppo non sono significative.** Anvil genera i blocchi su richiesta e il loro orario non concorda con quello del server: si ottengono anche latenze negative. Il dataset le marca con `anomalia_orologio` e vanno scartate dall'analisi. Le misure buone si fanno su rete di prova con NTP attivo, come prescrive il protocollo.
 - La campagna si lancia con `tools/local-chain/campagna.mjs`. `--dry-run` mostra il piano senza toccare nulla.
 

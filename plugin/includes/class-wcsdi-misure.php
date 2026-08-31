@@ -87,6 +87,10 @@ class WCSDI_Misure {
 			'importo'           => wc_format_decimal( (string) $order->get_total(), 2 ),
 			'valuta'            => $order->get_currency(),
 			'chain'             => (string) $order->get_meta( '_wcsdi_chain' ),
+			// Identificativo numerico della rete osservata. Distingue misure
+			// prese su reti diverse, che il solo nome configurato confonde.
+			'chain_id'          => (string) $order->get_meta( '_wcsdi_chain_id' ),
+			'forwarder'         => (string) $order->get_meta( '_wcsdi_forwarder' ),
 			'tx_hash'           => (string) $order->get_meta( '_wcsdi_tx_hash' ),
 			'gas_usato'         => (string) $order->get_meta( '_wcsdi_gas_usato' ),
 			'gas_prezzo_wei'    => (string) $order->get_meta( '_wcsdi_gas_prezzo' ),

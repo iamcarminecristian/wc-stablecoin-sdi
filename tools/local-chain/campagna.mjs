@@ -18,7 +18,7 @@
 import { config } from 'dotenv';
 config({ path: new URL('../../.env', import.meta.url) });
 
-import { createWalletClient, createPublicClient, http, parseUnits, keccak256, toHex } from 'viem';
+import { createWalletClient, createPublicClient, http, parseUnits, formatUnits, keccak256, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -144,28 +144,49 @@ const wallet = createWalletClient({ account: cliente, chain: CHAIN, transport: h
 
 const somma = ordini.reduce((t, o) => t + parseUnits(o.importo, DECIMALI), 0n);
 
-// Sulla chain di sviluppo l'intera fornitura del token di prova appartiene
-// all'esercente, che deve quindi dotare il cliente prima che possa pagare.
-// Su una rete reale il cliente arriva con i propri fondi e il passo non serve.
-if (31337 === CHAIN_ID) {
+// I fondi ruotano: ogni pagamento li sposta dal cliente all'esercente, sicche'
+// dopo qualche campagna il cliente resta senza. Prima di iniziare l'esercente
+// gli rimette la dotazione necessaria. E' un artificio dell'ambiente di prova,
+// dove le due parti sono simulate; in esercizio il cliente arriva con i propri.
+const chiaveEsercente = 31337 === CHAIN_ID
+  ? '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+  : process.env.MERCHANT_SIGNER_PRIVATE_KEY;
+
+if (chiaveEsercente) {
   const saldo = await pub.readContract({
     address: TOKEN, abi: erc20.abi, functionName: 'balanceOf', args: [cliente.address],
   });
   if (saldo < somma) {
-    const esercente = privateKeyToAccount('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80');
+    const esercente = privateKeyToAccount(chiaveEsercente);
     const w = createWalletClient({ account: esercente, chain: CHAIN, transport: http(RPC) });
-    console.log('Doto il cliente sulla chain di sviluppo...');
+    const disponibile = await pub.readContract({
+      address: TOKEN, abi: erc20.abi, functionName: 'balanceOf', args: [esercente.address],
+    });
+    const serve = somma - saldo;
+    if (disponibile < serve) {
+      console.error(`
+Fondi insufficienti: servono ${formatUnits(serve, DECIMALI)} EURe, l'esercente ne ha ${formatUnits(disponibile, DECIMALI)}.`);
+      console.error('Ridurre il paniere o le ripetizioni.');
+      process.exit(1);
+    }
+    console.log(`
+Ricarico il cliente di ${formatUnits(serve, DECIMALI)} EURe...`);
     await pub.waitForTransactionReceipt({
       hash: await w.writeContract({
-        address: TOKEN, abi: erc20.abi, functionName: 'transfer', args: [cliente.address, somma - saldo],
+        address: TOKEN, abi: erc20.abi, functionName: 'transfer', args: [cliente.address, serve],
       }),
     });
   }
 }
+// L'autorizzazione e' concessa con un margine: su rete pubblica la lettura
+// dello stato non e' immediatamente coerente fra i nodi dietro il medesimo
+// endpoint, e un'autorizzazione esatta produce rifiuti sporadici verso la
+// fine della campagna.
+const autorizzato = somma * 2n;
 console.log(`\nAutorizzo il contratto per ${ordini.length} pagamenti...`);
 await pub.waitForTransactionReceipt({
   hash: await wallet.writeContract({
-    address: TOKEN, abi: erc20.abi, functionName: 'approve', args: [FORWARDER, somma],
+    address: TOKEN, abi: erc20.abi, functionName: 'approve', args: [FORWARDER, autorizzato],
   }),
 });
 
@@ -173,21 +194,27 @@ console.log('Pago gli ordini...');
 let pagati = 0;
 const falliti = [];
 for (const o of ordini) {
-  try {
-    const hash = await wallet.writeContract({
-      address: FORWARDER, abi: fwd.abi, functionName: 'pay',
-      args: [o.ref, parseUnits(o.importo, DECIMALI)],
-    });
-    await pub.waitForTransactionReceipt({ hash });
-    pagati++;
-    if (pagati % 10 === 0 || pagati === ordini.length) {
-      process.stdout.write(`\r  ${pagati}/${ordini.length}`);
+  // Due tentativi: il primo fallimento su rete pubblica e' quasi sempre
+  // transitorio, il secondo indica una causa reale che va registrata come
+  // dato, perche' il tasso di errore e' uno dei KPI da misurare.
+  let ultimo = null;
+  for (let tentativo = 1; tentativo <= 2; tentativo++) {
+    try {
+      const hash = await wallet.writeContract({
+        address: FORWARDER, abi: fwd.abi, functionName: 'pay',
+        args: [o.ref, parseUnits(o.importo, DECIMALI)],
+      });
+      await pub.waitForTransactionReceipt({ hash });
+      pagati++;
+      ultimo = null;
+      break;
+    } catch (err) {
+      ultimo = (err.shortMessage ?? err.message ?? String(err)).replace(/\s+/g, ' ').slice(0, 120);
+      if (tentativo < 2) await new Promise((r) => setTimeout(r, 4000));
     }
-  } catch (err) {
-    // Un pagamento fallito non ferma la campagna: e' un dato, non un guasto.
-    // Il tasso di errore e' uno dei KPI da misurare.
-    falliti.push({ id: o.id, motivo: (err.shortMessage ?? err.message ?? String(err)).slice(0, 120) });
   }
+  if (ultimo) falliti.push({ id: o.id, motivo: ultimo });
+  process.stdout.write(`\r  ${pagati}/${ordini.length} pagati, ${falliti.length} falliti`);
 }
 console.log(`\n  pagati ${pagati}, falliti ${falliti.length}`);
 for (const f of falliti.slice(0, 5)) console.log(`    ordine ${f.id}: ${f.motivo}`);

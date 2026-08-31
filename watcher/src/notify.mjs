@@ -26,6 +26,8 @@ export async function notificaRimborso(dati) {
 export async function notificaPagamento(evento) {
   return invia('/payment-confirmed', {
     order_ref: evento.orderRef,
+    // Rete effettivamente osservata, che il plugin non puo' conoscere.
+    chain_id: evento.chainId,
     tx_hash: evento.txHash,
     log_index: evento.logIndex,
     amount: evento.importo,
