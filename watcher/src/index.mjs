@@ -16,7 +16,7 @@ import {
   STATE_FILE, START_BLOCK, REDEEM_ENABLED,
 } from './config.mjs';
 import { caricaStato, salvaStato } from './state.mjs';
-import { notificaPagamento } from './notify.mjs';
+import { notificaPagamento, notificaRimborso } from './notify.mjs';
 import { disponiRimborso, configurazioneRimborsoCompleta } from './redeem.mjs';
 
 const orderPaid = parseAbiItem(
@@ -35,6 +35,38 @@ const inAttesa = new Map();
 
 const chiave = (log) => `${log.transactionHash}:${log.logIndex}`;
 
+// Cache dei tempi di blocco: nel giro di osservazione lo stesso blocco ricorre
+// per piu' eventi, e interrogare il nodo ogni volta sarebbe uno spreco.
+const oraBlocco = new Map();
+
+async function istanteBlocco(numero) {
+  const k = numero.toString();
+  if (!oraBlocco.has(k)) {
+    const blocco = await client.getBlock({ blockNumber: numero });
+    oraBlocco.set(k, Number(blocco.timestamp));
+  }
+  return oraBlocco.get(k);
+}
+
+// Costo effettivo della transazione: gas consumato per prezzo pagato, come
+// prescrive il protocollo. Non e' una stima ma il dato della ricevuta.
+async function costoTransazione(txHash) {
+  try {
+    const r = await client.getTransactionReceipt({ hash: txHash });
+    const usato = r.gasUsed;
+    const prezzo = r.effectiveGasPrice ?? 0n;
+    return {
+      gasUsato: usato.toString(),
+      gasPrezzo: prezzo.toString(),
+      costoGas: formatUnits(usato * prezzo, 18),
+    };
+  } catch {
+    // Il costo e' un dato di misura, non una condizione di funzionamento:
+    // se manca si prosegue, il pagamento resta valido.
+    return { gasUsato: '', gasPrezzo: '', costoGas: '' };
+  }
+}
+
 async function osserva(daBlocco, aBlocco) {
   // I provider RPC pubblici limitano l'ampiezza dell'intervallo interrogabile,
   // quindi si procede a finestre anziche' in una sola richiesta.
@@ -45,6 +77,13 @@ async function osserva(daBlocco, aBlocco) {
     for (const log of logs) {
       const k = chiave(log);
       if (notificate.has(k) || inAttesa.has(k)) continue;
+
+      // t1 e' l'ora del blocco che contiene la transazione, non quella in cui
+      // questo servizio l'ha vista: la seconda dipende dall'intervallo di
+      // sondaggio e falserebbe la latenza misurata.
+      const t1 = await istanteBlocco(log.blockNumber);
+      const costo = await costoTransazione(log.transactionHash);
+
       inAttesa.set(k, {
         orderRef: log.args.orderRef,
         payer: log.args.payer,
@@ -52,6 +91,8 @@ async function osserva(daBlocco, aBlocco) {
         blocco: log.blockNumber,
         txHash: log.transactionHash,
         logIndex: log.logIndex,
+        t1,
+        ...costo,
       });
       console.log(`[VISTO]      ordine ${log.args.orderRef.slice(0, 10)} | ${formatUnits(log.args.amount, DECIMALS)} EURe | blocco ${log.blockNumber}`);
     }
@@ -64,6 +105,11 @@ async function confermaEnotifica(testa) {
     if (profondita < CONFIRMATIONS) continue;
 
     const importo = formatUnits(p.valore, DECIMALS);
+
+    // t2 e' l'ora del blocco che porta la transazione alla profondita'
+    // richiesta: e' li' che l'incasso diventa certo per l'esercente.
+    const t2 = await istanteBlocco(p.blocco + CONFIRMATIONS);
+
     const esito = await notificaPagamento({
       orderRef: p.orderRef,
       txHash: p.txHash,
@@ -71,6 +117,11 @@ async function confermaEnotifica(testa) {
       importo,
       payer: p.payer,
       blocco: p.blocco,
+      t1: p.t1,
+      t2,
+      gasUsato: p.gasUsato,
+      gasPrezzo: p.gasPrezzo,
+      costoGas: p.costoGas,
     });
 
     if (!esito.ok) {
@@ -103,8 +154,19 @@ async function rimborsa(orderRef, importo) {
     return;
   }
   try {
+    // t4 del protocollo: l'istante in cui il rimborso viene disposto. Si
+    // rileva prima della chiamata, cosi' la latenza di rete dell'emittente
+    // ricade nel regolamento e non sparisce dalla misura.
+    const t4 = Date.now() / 1000;
     const ordine = await disponiRimborso(importo);
     console.log(`[RIMBORSO]   disposto per ${orderRef.slice(0, 10)}: ordine ${ordine.id}, stato ${ordine.meta?.state}`);
+
+    await notificaRimborso({
+      orderRef,
+      stato: ordine.meta?.state ?? 'placed',
+      ordineId: ordine.id,
+      t4,
+    });
   } catch (err) {
     // Il rimborso fallito non blocca nulla: la fatturazione dipende
     // dall'effettuazione dell'operazione, non dall'esito del rimborso.

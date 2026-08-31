@@ -29,10 +29,13 @@ add_action( 'plugins_loaded', function () {
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-fatturazione.php';
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-nota-credito.php';
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-scadenza.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-misure.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-export.php';
 
 	WCSDI_Fatturazione::init();
 	WCSDI_Nota_Credito::init();
 	WCSDI_Scadenza::init();
+	WCSDI_Export::init();
 
 	// La fatturazione parte alla conferma del pagamento, non alla creazione
 	// dell'ordine: l'operazione si considera effettuata quando il pagamento
@@ -146,6 +149,58 @@ add_action( 'woocommerce_blocks_loaded', function () {
  * Idempotenza: chiave (tx_hash, log_index) registrata sull'ordine (RNF-03).
  */
 add_action( 'rest_api_init', function () {
+	/**
+	 * Aggiornamenti sul rimborso, dal servizio di rilevamento.
+	 * Servono i marcatori t4 e t5 del protocollo KPI: il momento in cui il
+	 * rimborso viene disposto e quello in cui gli euro risultano accreditati.
+	 * Il plugin non parla con l'emittente, quindi non potrebbe osservarli.
+	 */
+	register_rest_route( 'wcsdi/v1', '/redemption-update', array(
+		'methods'             => 'POST',
+		'permission_callback' => function ( WP_REST_Request $request ) {
+			$secret = get_option( 'wcsdi_watcher_secret', '' );
+			return is_string( $secret ) && '' !== $secret
+				&& hash_equals( $secret, (string) $request->get_header( 'x-wcsdi-secret' ) );
+		},
+		'args'                => array(
+			'order_ref' => array( 'required' => true, 'type' => 'string' ),
+			'stato'     => array( 'required' => true, 'type' => 'string' ),
+			'ordine_id' => array( 'required' => false, 'type' => 'string' ),
+			't4'        => array( 'required' => false, 'type' => 'number' ),
+			't5'        => array( 'required' => false, 'type' => 'number' ),
+		),
+		'callback'            => function ( WP_REST_Request $request ) {
+			$ref = sanitize_text_field( (string) $request['order_ref'] );
+			if ( ! preg_match( '/^0x[0-9a-f]{64}$/i', $ref ) ) {
+				return new WP_Error( 'wcsdi_bad_ref', 'Riferimento ordine malformato', array( 'status' => 400 ) );
+			}
+			$order = wcsdi_trova_ordine_da_riferimento( $ref );
+			if ( ! $order ) {
+				return new WP_Error( 'wcsdi_order_not_found', 'Nessun ordine per il riferimento indicato', array( 'status' => 404 ) );
+			}
+
+			$stato = sanitize_text_field( (string) $request['stato'] );
+			$order->update_meta_data( '_wcsdi_rimborso_stato', $stato );
+			if ( isset( $request['ordine_id'] ) ) {
+				$order->update_meta_data( '_wcsdi_rimborso_id', sanitize_text_field( (string) $request['ordine_id'] ) );
+			}
+			if ( isset( $request['t4'] ) ) {
+				WCSDI_Misure::segna( $order, 't4', (float) $request['t4'] );
+			}
+			if ( isset( $request['t5'] ) ) {
+				WCSDI_Misure::segna( $order, 't5', (float) $request['t5'] );
+			}
+			$order->add_order_note( sprintf(
+				/* translators: %s: stato del rimborso presso l'emittente */
+				__( 'Rimborso in EUR: stato %s.', 'wc-stablecoin-sdi' ),
+				$stato
+			) );
+			$order->save();
+
+			return array( 'status' => 'accepted', 'order_id' => $order->get_id() );
+		},
+	) );
+
 	register_rest_route( 'wcsdi/v1', '/payment-confirmed', array(
 		'methods'             => 'POST',
 		'permission_callback' => function ( WP_REST_Request $request ) {
@@ -162,6 +217,13 @@ add_action( 'rest_api_init', function () {
 			'amount'       => array( 'required' => true, 'type' => 'string' ),
 			'payer'        => array( 'required' => false, 'type' => 'string' ),
 			'block_number' => array( 'required' => false, 'type' => 'integer' ),
+			// Marcatori e costo di rete: li conosce solo il servizio, che
+			// legge il blocco e la ricevuta della transazione (Capitolo 6).
+			't1'             => array( 'required' => false, 'type' => 'number' ),
+			't2'             => array( 'required' => false, 'type' => 'number' ),
+			'gas_usato'      => array( 'required' => false, 'type' => 'string' ),
+			'gas_prezzo_wei' => array( 'required' => false, 'type' => 'string' ),
+			'costo_gas'      => array( 'required' => false, 'type' => 'string' ),
 		),
 		'callback'            => function ( WP_REST_Request $request ) {
 			$ref = sanitize_text_field( (string) $request['order_ref'] );
@@ -183,6 +245,23 @@ add_action( 'rest_api_init', function () {
 			$seen = (array) $order->get_meta( '_wcsdi_confirmed_events', true );
 			if ( in_array( $key, $seen, true ) ) {
 				return array( 'status' => 'duplicate', 'key' => $key, 'order_id' => $order->get_id() );
+			}
+
+			// I marcatori on-chain portano l'ora del blocco, non quella in cui
+			// il servizio se ne è accorto: la seconda dipende dall'intervallo
+			// di sondaggio e falserebbe la misura della latenza.
+			if ( isset( $request['t1'] ) ) {
+				WCSDI_Misure::segna( $order, 't1', (float) $request['t1'] );
+			}
+			if ( isset( $request['t2'] ) ) {
+				WCSDI_Misure::segna( $order, 't2', (float) $request['t2'] );
+			}
+			WCSDI_Misure::segna( $order, 't3' );
+
+			foreach ( array( 'gas_usato' => '_wcsdi_gas_usato', 'gas_prezzo_wei' => '_wcsdi_gas_prezzo', 'costo_gas' => '_wcsdi_costo_gas' ) as $campo => $meta ) {
+				if ( isset( $request[ $campo ] ) ) {
+					$order->update_meta_data( $meta, sanitize_text_field( (string) $request[ $campo ] ) );
+				}
 			}
 
 			$importo = wc_format_decimal( (string) $request['amount'] );

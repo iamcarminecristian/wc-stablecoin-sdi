@@ -171,6 +171,11 @@ class WCSDI_Gateway_EURe extends WC_Payment_Gateway {
 		$order->update_meta_data( '_wcsdi_expires_at', time() + ( (int) $this->get_option( 'payment_window', 60 ) * MINUTE_IN_SECONDS ) );
 		$order->save();
 
+		// t0 del protocollo: il checkout è completato e il cliente può
+		// disporre il pagamento. È l'origine di tutte le latenze misurate.
+		WCSDI_Misure::segna( $order, 't0' );
+		$order->save();
+
 		// Oltre la finestra il riferimento non è più valido e l'ordine va
 		// chiuso, restituendo quanto eventualmente ricevuto (RF-04).
 		WCSDI_Scadenza::pianifica( $order );

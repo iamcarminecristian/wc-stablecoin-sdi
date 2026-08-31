@@ -64,6 +64,16 @@ Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal co
 - **Scadenza**: l'azione e' pianificata con un margine oltre la finestra dichiarata, altrimenti un pagamento partito all'ultimo minuto non farebbe in tempo a maturare le conferme e si chiuderebbe un ordine di fatto pagato. Quando l'ordine viene pagato l'azione viene annullata. Un ordine scaduto con un incasso parziale conserva `_wcsdi_da_restituire`: la somma va restituita, non trattenuta in silenzio.
 - **Checkout a blocchi**: il metodo va dichiarato una seconda volta in JavaScript, perche' il checkout a blocchi si costruisce nel browser e ignora la definizione PHP del gateway. `plugin/assets/js/blocks.js` usa i globali che WooCommerce espone e non richiede un passo di compilazione: il plugin non ha una toolchain di build e introdurla per poche righe non si giustifica. Allo script arrivano solo titolo e descrizione, mai credenziali o indirizzi.
 
+## Strumentazione per il Capitolo 6
+
+Il protocollo KPI (documento su Drive) chiede che i marcatori t0-t5 siano registrati dal codice, non ricostruiti a posteriori dai log. `WCSDI_Misure` li tiene sull'ordine, `wp wcsdi export` produce il dataset.
+
+- **I marcatori on-chain portano l'ora del blocco, non quella in cui il servizio se ne accorge.** La seconda dipende dall'intervallo di sondaggio e falserebbe la latenza. t1 e t2 arrivano quindi dal servizio, che legge il blocco; il plugin non parla con la catena e non potrebbe osservarli.
+- **Il primo valore di un marcatore vince.** Una notifica ripetuta non deve spostare in avanti un istante gia' osservato, altrimenti le latenze risulterebbero piu' brevi del vero.
+- **Le due latenze vanno tenute distinte**: conferma dell'incasso (t2-t0), che si confronta con l'autorizzazione di una carta, e regolamento (t5-t0), che si confronta con l'accredito. Confonderle rende il raffronto attaccabile, ed e' il punto su cui il protocollo insiste di piu'.
+- Il costo di rete e' letto dalla ricevuta della transazione, non stimato.
+- `wc_get_orders` restituisce anche i rimborsi, che non espongono `get_payment_method()`: interrogarli come ordini produce un errore fatale. Verificare sempre `instanceof WC_Order`.
+
 ## Correlazione pagamento-ordine
 
 L'emittente lega l'IBAN di accredito a un solo indirizzo, quindi non si puo' assegnare un indirizzo distinto a ogni ordine, e un trasferimento ERC-20 non porta causale. Il pagamento passa percio' dal contratto in `contracts/src/OrderForwarder.sol`, che sposta i token dal cliente all'esercente ed emette `OrderPaid(orderRef, payer, amount)`.
