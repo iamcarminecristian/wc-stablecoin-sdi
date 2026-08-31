@@ -10,8 +10,26 @@ watcher/            servizio Node di rilevamento (nasce dal consolidamento dello
 spikes/             tre spike isolati, in ordine, ciascuno con criterio di uscita
 tools/local-chain/  MockEURe + script di deploy e pagamento simulato su anvil
 docker-compose.yml  WordPress+WooCommerce, chain EVM locale, watcher (profilo full)
+docs/sessioni/      note delle sessioni di lavoro sui sandbox esterni
 CLAUDE.md           istruzioni di progetto per sessioni Claude Code / Cowork
 ```
+
+## Configurazione
+
+Un solo file per tutto il monorepo, alla root: `cp .env.example .env` e compilare
+i valori. Gli spike lo caricano per path relativo al proprio file, non dalla cwd,
+quindi partono sia dalla loro directory sia dalla root del repo. `.env` e' escluso
+da `.gitignore`: i segreti non vanno mai committati.
+
+Le variabili gia' presenti nell'ambiente hanno la precedenza su quelle del file,
+quindi il flusso offline su anvil convive con la configurazione di testnet:
+
+```bash
+RPC_URL=http://localhost:8545 TOKEN_ADDRESS=<stampato da make demo> npm start
+```
+
+`tools/local-chain/` non legge il `.env` di proposito: prenderebbe l'RPC di
+Base Sepolia e `make demo` smetterebbe di funzionare sulla chain locale.
 
 ## Ambiente in pochi comandi
 
@@ -26,12 +44,14 @@ Fatto: negozio su http://localhost:8080/wp-admin (admin / admin), gateway da abi
 
 ## Spike (ordine di esecuzione)
 
-1. **01-onchain-detection**: eseguibile subito, anche offline. `make demo` stampa `TOKEN_ADDRESS`; in `spikes/01-onchain-detection`: `cp .env.example .env` (RPC http://localhost:8545, WATCH_ADDRESS = account #1 di anvil), `npm install && npm start`, poi rilanciare `make demo` in un altro terminale. Uscita attesa: riga `[CONFERMATO]` con profondità 12.
-2. **02-monerium-redemption**: richiede credenziali sandbox monerium.dev. Auth e `GET /tokens` già implementati (l'output fornisce gli indirizzi EURe reali per testare lo spike 1 su testnet); redeem da completare sulla documentazione corrente. Uscita: ordine di redemption a stato finale in sandbox.
+Lo spike 2 va eseguito per primo: il suo output fornisce il `TOKEN_ADDRESS` che serve allo spike 1 su testnet.
+
+1. **01-onchain-detection**: su Base Sepolia con la configurazione del `.env` (`npm install && npm start`), oppure offline su anvil con l'override da shell descritto sopra, rilanciando `make demo` in un altro terminale. Uscita attesa: riga `[CONFERMATO]` con profondità 12.
+2. **02-monerium-redemption**: richiede credenziali sandbox monerium.dev. Auth, `GET /tokens`, `GET /profiles` e `GET /ibans` implementati: l'output stampa l'indirizzo del contratto EURe sulla chain configurata, da incollare in `TOKEN_ADDRESS`. Redeem da completare. Uscita: ordine di redemption a stato finale in sandbox.
 3. **03-fatturapa-sdi**: genera subito la fattura di esempio in `out/` (tracciato 1.9.1, mappatura §4.5: TD01, EUR, MP05, riferimenti on-chain in AltriDatiGestionali dentro DettaglioLinee); invio al SdI di test da completare dopo l'attivazione openapi.it. Uscita: ricevuta di consegna dal SdI di test.
 
 **Gate fiscale**: le scelte MP05 / AltriDatiGestionali / momento di effettuazione sono in attesa di validazione del relatore; non consolidare lo spike 3 nel plugin prima dell'ok (vedi CLAUDE.md).
 
 ## Collegamento con la tesi
 
-I requisiti citati nel codice (RF-xx, RNF-xx) e i riferimenti §4.x rimandano al Capitolo 4 della tesi (repository LaTeX separato).
+I requisiti citati nel codice (RF-xx, RNF-xx) e i riferimenti §4.x rimandano al Capitolo 4 della tesi (repository LaTeX separato). Le note in `docs/sessioni/` documentano i problemi incontrati sui sandbox esterni e sono materiale diretto per §5.3 e §5.4.

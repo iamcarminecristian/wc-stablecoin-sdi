@@ -7,19 +7,40 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 - `make init` — prima accensione: WordPress+WooCommerce provisionati su http://localhost:8080 (admin/admin) e chain locale anvil su :8545
 - `make up` / `make down` / `make nuke` — gestione ambiente
 - `make demo` — deploya MockEURe sulla chain locale, simula un pagamento e mina 12 blocchi (input per lo spike 1)
-- Spike: in `spikes/*/`, `cp .env.example .env` poi `npm install && npm start`
+- Spike: `cp .env.example .env` alla root (una volta sola), poi in `spikes/*/` `npm install && npm start`
 
 ## Stato e ordine di lavoro
-1. Spike 1 (rilevamento on-chain): completo, criterio di uscita verificabile con `make demo`
-2. Spike 2 (redemption Monerium): auth + GET /tokens implementati; il redeem va completato sulla documentazione monerium.dev con le credenziali sandbox
-3. Spike 3 (FatturaPA/SdI): generazione XML 1.9.1 completa; invio a openapi.it da completare con il token sandbox
+1. Spike 1 (rilevamento on-chain): completo, verificato su Base Sepolia e, con override da shell, su anvil via `make demo`
+2. Spike 2 (redemption Monerium): auth, `/tokens`, `/profiles` e `/ibans` verificati contro il sandbox reale. Resta il `POST /orders`, che richiede una firma EIP-191 del wallet: vedi il vincolo non-custodial piu' sotto
+3. Spike 3 (FatturaPA/SdI): generazione XML 1.9.1 completa e prima fattura di test accettata dal sandbox; `trasmetti()` e' ancora uno stub, l'invio va portato nel codice
 4. Consolidamento: spike 1 → `watcher/`, spike 2-3 → `plugin/` (con Action Scheduler), poi Capitolo 5 della tesi
+
+Lo spike 2 va eseguito prima dello spike 1: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
+
+## Ambienti esterni (sandbox verificati il 31/08/2026)
+
+Nota completa in `docs/sessioni/2026-08-31.md`.
+
+**Monerium** — sandbox `api.monerium.dev`; la produzione e' `.app`, non usarla. Applicazione su piano Private, autenticazione OAuth2 `client_credentials` su `POST /auth/token`.
+- Tutti gli endpoint autenticati (profili, indirizzi, IBAN, ordini, firme) richiedono l'header `Accept: application/vnd.monerium.api-v2+json`. Senza, l'API risponde 404 invece di un errore di validazione, il che rende la diagnosi fuorviante. Gli endpoint `/auth/token` e `/auth/context` non lo richiedono.
+- Chain in uso: **Base Sepolia** (`basesepolia`, chain id 84532), l'unica con IBAN approvato sul wallet. Il piano di luglio ipotizzava Ethereum Sepolia: non e' la chain reale. Gnosis Chiado e' abilitato ma senza IBAN, quindi inutilizzabile per i test.
+- Il profilo resta `kind: "unknown"` e `state: "created"`: normale in sandbox, che non richiede KYC. Non e' un errore da correggere.
+- Gli elenchi (`/profiles`, `/ibans`) arrivano incapsulati in un oggetto, mentre `/tokens` restituisce un array nudo.
+
+**Openapi (SdI / FatturaPA)** — sandbox `test.sdi.openapi.it`; la produzione e' `sdi.openapi.it`.
+- Autenticazione con il Bearer token della sezione Autenticazione della dashboard, tipo Sandbox. **Non** e' la "API Key" mostrata piu' in alto nella stessa pagina: sono due credenziali distinte.
+- Prerequisito a qualsiasi chiamata: impostare il credito sandbox da dashboard, anche se le richieste di test sono gratuite.
+- `fiscal_id` in `BusinessRegistryConfiguration` accetta sia partita IVA sia codice fiscale personale, senza prefisso IT.
+- L'XML richiede la dichiarazione esplicita del namespace sul tag radice, che l'esempio ufficiale della documentazione Openapi omette: `xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"`.
+- L'attributo `versione` sul tag radice deve coincidere esattamente con `<FormatoTrasmissione>`, altrimenti il SdI scarta la fattura con errore 00428.
+- Il Codice Destinatario da registrare sull'Agenzia delle Entrate serve solo al ciclo passivo: per il nostro caso, solo ciclo attivo, non serve.
+- **Aperto**: non e' confermato se il sandbox raggiunga il vero canale di test SdI dell'Agenzia delle Entrate o simuli internamente le ricevute. La risposta condiziona il protocollo KPI del Capitolo 6.
 
 ## Vincoli non negoziabili
 - **Gate fiscale**: MP05, AltriDatiGestionali (TX-HASH/CHAIN/PAY-ADDR) e momento di effettuazione sono scelte in attesa di validazione del relatore. Non modificarle né consolidare lo spike 3 nel plugin senza indicazione esplicita di Carmine.
 - **Non-custodial (RNF-02)**: mai chiavi private nel codice o nella configurazione del plugin; l'unica chiave presente nel repo è quella pubblica di default di anvil in `tools/local-chain/chain.mjs`, priva di valore.
 - **Idempotenza (RNF-03)**: ogni operazione con effetti esterni deve avere chiave idempotente; per gli eventi on-chain è `txHash:logIndex`.
-- **Segreti** solo in `.env` (mai committati); i `.env.example` documentano le variabili.
+- **Segreti** solo nel `.env` unico alla root, mai committato; `.env.example` ne documenta i nomi. Gli spike lo caricano per path relativo al proprio file, non dalla cwd. Le variabili gia' in ambiente hanno la precedenza: e' cosi' che la demo offline su anvil convive con la configurazione di testnet. `tools/local-chain/` non legge il `.env` di proposito.
 
 ## Convenzioni
 - Commenti e messaggi in italiano, tono asciutto; niente em dash.
