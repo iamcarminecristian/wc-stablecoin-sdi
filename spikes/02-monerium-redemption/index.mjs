@@ -113,19 +113,98 @@ async function listProfiles(token) {
 }
 
 // (3) Redemption: ordine di rimborso dal saldo on-chain verso IBAN (SEPA).
-// TODO(spike): allineare il payload alla documentazione corrente delle API
-// (monerium.dev, sezione Orders) dopo l'ottenimento delle credenziali:
-// campi tipici attesi: address di provenienza, chain, amount, currency,
-// counterpart { identifier: { standard: 'iban', iban }, details { name } },
-// e firma/messaggio ove richiesto dal flusso sandbox.
-async function redeem(token) {
-  console.log('[REDEEM] stub: implementare dopo verifica payload su monerium.dev');
-  // const order = await api('/orders', {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({ /* payload da documentazione */ }),
-  // }, token);
-  // console.log('[REDEEM] ordine creato:', order.id, order.meta?.state);
+//
+// Monerium non si accontenta dell'access token OAuth, che prova soltanto che
+// l'applicazione parla per conto dell'account. Bruciare EURe e muovere euro
+// verso un IBAN richiede in piu' la prova che chi controlla l'indirizzo sia
+// d'accordo: una firma sul messaggio dell'ordine. Il messaggio vincola
+// importo, IBAN e istante, quindi non e' riutilizzabile.
+//
+// Formato imposto dall'API, da rispettare alla lettera:
+//   Send <VALUTA> <IMPORTO> to <IBAN> at <TIMESTAMP RFC3339 al minuto>
+// Il timestamp non porta i secondi e deve cadere entro cinque minuti da adesso
+// oppure nel futuro; lo spostiamo avanti di due minuti per assorbire la
+// latenza della chiamata.
+const ANTICIPO_MS = 2 * 60 * 1000;
+
+function messaggioOrdine(importo, iban) {
+  const t = new Date(Date.now() + ANTICIPO_MS);
+  t.setSeconds(0, 0);
+  // RFC3339 al minuto: 2026-08-31T17:42Z, senza i secondi che toISOString aggiunge.
+  const ts = t.toISOString().replace(/:\d{2}\.\d{3}Z$/, 'Z');
+  return `Send EUR ${importo} to ${iban} at ${ts}`;
+}
+
+// Unico punto in cui il sistema esercita la capacita' di firma del merchant.
+// E' isolato di proposito: la scelta di dove viva la chiave (processo di
+// servizio, KMS, Safe con ERC-1271) e' architetturale e cambia solo qui.
+// Vedi docs/sessioni/2026-08-31.md e il vincolo RNF-02 in CLAUDE.md.
+async function firma(messaggio) {
+  const chiave = process.env.SPIKE_SIGNER_PRIVATE_KEY;
+  if (!chiave) {
+    throw new Error(
+      'Firma non disponibile: manca SPIKE_SIGNER_PRIVATE_KEY. ' +
+      `Messaggio da firmare: ${messaggio}`
+    );
+  }
+  const { privateKeyToAccount } = await import('viem/accounts');
+  const account = privateKeyToAccount(chiave.startsWith('0x') ? chiave : `0x${chiave}`);
+  if (account.address.toLowerCase() !== WALLET.toLowerCase()) {
+    throw new Error(
+      `La chiave di firma corrisponde a ${account.address}, non al wallet ${WALLET}.`
+    );
+  }
+  // personal_sign (EIP-191): e' il formato che l'API si aspetta per un EOA.
+  return account.signMessage({ message: messaggio });
+}
+
+async function redeem(token, importo = '1') {
+  const iban = required('MONERIUM_IBAN');
+  const messaggio = messaggioOrdine(importo, iban);
+  console.log(`[REDEEM] messaggio: ${messaggio}`);
+
+  const signature = await firma(messaggio);
+
+  const ordine = await api('/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'redeem',
+      amount: importo,
+      currency: 'eur',
+      address: WALLET,
+      chain: CHAIN,
+      message: messaggio,
+      signature,
+      counterpart: {
+        identifier: { standard: 'iban', iban },
+        details: { firstName: 'Carmine Cristian', lastName: 'Cruoglio', country: 'IT' },
+      },
+    }),
+  }, token);
+
+  console.log(`[REDEEM] ordine creato: ${ordine.id} | stato ${ordine.meta?.state}`);
+  return attendiStatoFinale(token, ordine.id);
+}
+
+// Il criterio di uscita dello spike chiede gli stati intermedi, non solo
+// l'esito: l'ordine viene seguito fino a uno stato terminale.
+const STATI_FINALI = new Set(['processed', 'rejected']);
+
+async function attendiStatoFinale(token, id, tentativi = 30, attesaMs = 5000) {
+  let precedente = null;
+  for (let i = 0; i < tentativi; i++) {
+    const o = await api(`/orders/${id}`, {}, token);
+    const stato = o.meta?.state;
+    if (stato !== precedente) {
+      console.log(`[REDEEM] stato: ${stato}`);
+      precedente = stato;
+    }
+    if (STATI_FINALI.has(stato)) return o;
+    await new Promise((r) => setTimeout(r, attesaMs));
+  }
+  console.log('[REDEEM] stato finale non raggiunto entro il tempo di attesa.');
+  return null;
 }
 
 async function main() {

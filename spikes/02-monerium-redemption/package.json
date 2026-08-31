@@ -2,6 +2,11 @@
   "name": "spike-02-monerium-redemption",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node index.mjs" },
-  "dependencies": { "dotenv": "^16.4.5" }
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "viem": "^2.21.0"
+  }
 }
