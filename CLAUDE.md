@@ -16,7 +16,7 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 2. Plugin: gateway, riferimento dell'ordine, endpoint REST con verifica dell'importo e transizione di stato (RF-02, RF-03, RF-04, RNF-03). Restano la fatturazione via Action Scheduler (RF-06, RF-07), la nota di credito (RF-10) e l'integrazione nei checkout blocks
 3. Fatturazione consolidata nel plugin: composizione del tracciato, trasmissione al fornitore e ciclo delle ricevute, orchestrati da Action Scheduler (RF-06, RF-07). Verificata contro il sandbox reale da `make e2e`
 4. Nota di credito (RF-10), scadenza della finestra (RF-04) e checkout a blocchi (RNF-05) completati e verificati
-5. Il rimborso e' scritto ma non ancora eseguito end-to-end: manca `MERCHANT_SIGNER_PRIVATE_KEY` nel `.env`
+5. Rimborso verificato end-to-end sul sandbox: da `pending` a `processed` in meno di due secondi
 6. Restano aperti: repository pubblico (RNF-01), verifica della minimizzazione dei dati (RNF-04) e l'anello del rimborso nel registro di audit (RF-09)
 
 Lo spike 2 resta utile per interrogare il sandbox: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
@@ -27,6 +27,9 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 
 **Monerium** — sandbox `api.monerium.dev`; la produzione e' `.app`, non usarla. Applicazione su piano Private, autenticazione OAuth2 `client_credentials` su `POST /auth/token`.
 - Tutti gli endpoint autenticati (profili, indirizzi, IBAN, ordini, firme) richiedono l'header `Accept: application/vnd.monerium.api-v2+json`. Senza, l'API risponde 404 invece di un errore di validazione, il che rende la diagnosi fuorviante. Gli endpoint `/auth/token` e `/auth/context` non lo richiedono.
+- **Il timestamp del messaggio di rimborso vuole i secondi**, azzerati. La documentazione parla di precisione al minuto e questo induce a ometterli, ma l'API rifiuta il valore troncato con `invalid timestamp format`.
+- **Lo stato dell'ordine sta in `state`, non in `meta.state`**: dentro `meta` ci sono solo gli istanti e gli hash. Stati terminali: `processed`, `rejected`, `declined`.
+- Il bonifico simulato segue l'IBAN, non l'indirizzo selezionato nel pannello: per instradarlo altrove si sposta l'IBAN con `PATCH /ibans/{iban}`.
 - Chain in uso: **Base Sepolia** (`basesepolia`, chain id 84532), l'unica con IBAN approvato sul wallet. Il piano di luglio ipotizzava Ethereum Sepolia: non e' la chain reale. Gnosis Chiado e' abilitato ma senza IBAN, quindi inutilizzabile per i test.
 - Il profilo resta `kind: "unknown"` e `state: "created"`: normale in sandbox, che non richiede KYC. Non e' un errore da correggere.
 - Gli elenchi (`/profiles`, `/ibans`) arrivano incapsulati in un oggetto, mentre `/tokens` restituisce un array nudo.

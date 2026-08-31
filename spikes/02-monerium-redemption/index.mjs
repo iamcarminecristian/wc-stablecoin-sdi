@@ -131,7 +131,9 @@ function messaggioOrdine(importo, iban) {
   const t = new Date(Date.now() + ANTICIPO_MS);
   t.setSeconds(0, 0);
   // RFC3339 al minuto: 2026-08-31T17:42Z, senza i secondi che toISOString aggiunge.
-  const ts = t.toISOString().replace(/:\d{2}\.\d{3}Z$/, 'Z');
+  // I secondi restano, azzerati: la documentazione parla di precisione al
+  // minuto e questo induce a ometterli, ma l'API rifiuta il timestamp senza.
+  const ts = t.toISOString().replace(/\.\d{3}Z$/, 'Z');
   return `Send EUR ${importo} to ${iban} at ${ts}`;
 }
 
@@ -185,19 +187,21 @@ async function redeem(token, importo = '1') {
     }),
   }, token);
 
-  console.log(`[REDEEM] ordine creato: ${ordine.id} | stato ${ordine.meta?.state}`);
+  // Lo stato e' un campo di primo livello: dentro meta ci sono solo gli
+  // istanti e gli hash delle transazioni.
+  console.log(`[REDEEM] ordine creato: ${ordine.id} | stato ${ordine.state}`);
   return attendiStatoFinale(token, ordine.id);
 }
 
 // Il criterio di uscita dello spike chiede gli stati intermedi, non solo
 // l'esito: l'ordine viene seguito fino a uno stato terminale.
-const STATI_FINALI = new Set(['processed', 'rejected']);
+const STATI_FINALI = new Set(['processed', 'rejected', 'declined']);
 
 async function attendiStatoFinale(token, id, tentativi = 30, attesaMs = 5000) {
   let precedente = null;
   for (let i = 0; i < tentativi; i++) {
     const o = await api(`/orders/${id}`, {}, token);
-    const stato = o.meta?.state;
+    const stato = o.state;
     if (stato !== precedente) {
       console.log(`[REDEEM] stato: ${stato}`);
       precedente = stato;

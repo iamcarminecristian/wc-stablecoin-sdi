@@ -17,7 +17,7 @@ import {
 } from './config.mjs';
 import { caricaStato, salvaStato } from './state.mjs';
 import { notificaPagamento, notificaRimborso } from './notify.mjs';
-import { disponiRimborso, configurazioneRimborsoCompleta } from './redeem.mjs';
+import { disponiRimborso, attendiRimborso, configurazioneRimborsoCompleta } from './redeem.mjs';
 
 const orderPaid = parseAbiItem(
   'event OrderPaid(bytes32 indexed orderRef, address indexed payer, uint256 amount)'
@@ -159,14 +159,19 @@ async function rimborsa(orderRef, importo) {
     // ricade nel regolamento e non sparisce dalla misura.
     const t4 = Date.now() / 1000;
     const ordine = await disponiRimborso(importo);
-    console.log(`[RIMBORSO]   disposto per ${orderRef.slice(0, 10)}: ordine ${ordine.id}, stato ${ordine.meta?.state}`);
+    console.log(`[RIMBORSO]   disposto per ${orderRef.slice(0, 10)}: ordine ${ordine.id}, stato ${ordine.state}`);
 
-    await notificaRimborso({
-      orderRef,
-      stato: ordine.meta?.state ?? 'placed',
-      ordineId: ordine.id,
-      t4,
-    });
+    await notificaRimborso({ orderRef, stato: ordine.state ?? 'placed', ordineId: ordine.id, t4 });
+
+    // t5: gli euro sono usciti verso l'IBAN. Si attende in modo asincrono per
+    // non trattenere il ciclo di osservazione, che deve restare reattivo.
+    attendiRimborso(ordine.id)
+      .then((esito) => {
+        if (!esito) return;
+        console.log(`[RIMBORSO]   ${orderRef.slice(0, 10)} concluso: ${esito.stato}`);
+        return notificaRimborso({ orderRef, stato: esito.stato, ordineId: ordine.id, t5: esito.t5 });
+      })
+      .catch((err) => console.error(`[RIMBORSO]   esito non rilevato: ${err.message ?? err}`));
   } catch (err) {
     // Il rimborso fallito non blocca nulla: la fatturazione dipende
     // dall'effettuazione dell'operazione, non dall'esito del rimborso.

@@ -62,7 +62,9 @@ async function accessToken() {
 function messaggioOrdine(importo, iban) {
   const t = new Date(Date.now() + ANTICIPO_MS);
   t.setSeconds(0, 0);
-  const ts = t.toISOString().replace(/:\d{2}\.\d{3}Z$/, 'Z');
+  // I secondi restano, azzerati: la documentazione parla di precisione al
+  // minuto e questo induce a ometterli, ma l'API rifiuta il timestamp senza.
+  const ts = t.toISOString().replace(/\.\d{3}Z$/, 'Z');
   return `Send EUR ${importo} to ${iban} at ${ts}`;
 }
 
@@ -107,4 +109,27 @@ export async function disponiRimborso(importo) {
 
 export async function statoRimborso(id) {
   return api(`/orders/${id}`, {}, await accessToken());
+}
+
+/// Stati oltre i quali il rimborso non evolve piu'.
+const STATI_FINALI = new Set(['processed', 'rejected', 'declined']);
+
+/// Segue il rimborso fino a uno stato terminale e restituisce l'istante in cui
+/// e' stato lavorato, che e' il marcatore t5 del protocollo: gli euro sono
+/// usciti verso l'IBAN. L'istante e' quello dichiarato dall'emittente, non
+/// quello in cui il servizio se ne accorge.
+export async function attendiRimborso(id, tentativi = 20, attesaMs = 5000) {
+  for (let i = 0; i < tentativi; i++) {
+    const o = await statoRimborso(id);
+    if (STATI_FINALI.has(o.state)) {
+      const lavorato = o.meta?.processedAt ?? o.meta?.rejectedAt ?? null;
+      return {
+        stato: o.state,
+        t5: lavorato ? Date.parse(lavorato) / 1000 : Date.now() / 1000,
+        txHashes: o.meta?.txHashes ?? [],
+      };
+    }
+    await new Promise((r) => setTimeout(r, attesaMs));
+  }
+  return null;
 }
