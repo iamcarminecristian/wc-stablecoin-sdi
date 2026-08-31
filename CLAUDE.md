@@ -48,17 +48,17 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal contratto e' per definizione un incasso dell'esercente, e il riferimento viaggia dentro l'evento. Il watcher osserva, applica la finalita' e notifica; il plugin resta l'unica autorita' sullo stato dell'ordine e decide se l'importo basta.
 
 - `order_ref` = `hash_hmac('sha256', 'wcsdi-order:'.$id, wcsdi_watcher_secret)`. Deterministico, non invertibile da fuori, 32 byte. Il segreto e' lo stesso di `WCSDI_SHARED_SECRET` nel `.env`: se divergono, le notifiche vengono respinte con 401.
-- La ricerca dell'ordine per riferimento **riverifica sempre** il metadato con `hash_equals`. `wc_get_orders` delega a data store diversi secondo che HPOS sia attivo, e un filtro non compreso viene ignorato in silenzio: senza riverifica un pagamento finisce sull'ordine sbagliato. E' un bug gia' occorso, non un'ipotesi.
+- La ricerca dell'ordine per riferimento **riverifica sempre** il metadato con `hash_equals`. `wc_get_orders` delega a data store diversi secondo che HPOS sia attivo, e un filtro non compreso viene ignorato in silenzio: senza riverifica un pagamento puo' essere attribuito all'ordine sbagliato.
 - La ricerca non filtra per stato, altrimenti una notifica ripetuta su un ordine gia' pagato non riconoscerebbe il duplicato e RNF-03 cadrebbe proprio nel caso che l'idempotenza esiste per coprire.
 - L'immagine di WordPress non riscrive `/wp-json/`: la REST API si raggiunge come `?rest_route=/wcsdi/v1/...`, forma gia' impostata nel `.env.example`.
 
 ## Fatturazione elettronica
 
 - **Il documento si invia come XML grezzo con `Content-Type: application/xml`.** Il fornitore restituisce poi la fattura come struttura JSON in snake_case, ma non la accetta in quella forma: inviarla come JSON risponde 422 con `Parsing error: malformed XML` (codice 802). La forma di lettura non e' la forma di scrittura.
-- L'endpoint e' `POST /invoices`, non `/IT/invoices`, che risponde 401 da uno storage estraneo e trae in inganno. Lo stato si rilegge da `GET /invoices/{uuid}`, che porta `marking` e `notifications`.
+- L'endpoint e' `POST /invoices`. Lo stato si rilegge da `GET /invoices/{uuid}`, che porta `marking` e `notifications`.
 - La composizione passa da `XMLWriter`, non da concatenazione: i valori arrivano dall'ordine e quindi dal cliente, e l'escaping non puo' essere lasciato a chi scrive il template. L'ordine degli elementi segue le sequenze del tracciato: un elemento fuori posto fa scartare la fattura.
 - `get_items()` senza argomenti restituisce le sole righe prodotto. Le commissioni vanno chieste esplicitamente con `array( 'line_item', 'fee' )`, altrimenti il documento nasce senza corpo e il fornitore lo rifiuta con un messaggio poco chiaro.
-- Gli argomenti delle azioni di Action Scheduler contengono il solo `order_id`. Contatori di tentativi e di verifiche vivono nei metadati dell'ordine, perche' `as_has_scheduled_action` riconosce un'azione gia' in coda solo se gli argomenti coincidono esattamente: con il contatore fra gli argomenti il controllo anti-duplicato non troverebbe mai nulla e ogni conferma accoderebbe una copia. E' un bug gia' occorso.
+- Gli argomenti delle azioni di Action Scheduler contengono il solo `order_id`. Contatori di tentativi e di verifiche vivono nei metadati dell'ordine, perche' `as_has_scheduled_action` riconosce un'azione gia' in coda solo se gli argomenti coincidono esattamente: con il contatore fra gli argomenti il controllo anti-duplicato non individuerebbe mai il lavoro gia' accodato.
 - Il numero progressivo si assegna una volta sola e resta nei metadati: un ritentativo non deve consumarne un altro e lasciare un buco nella serie.
 
 ## Nota di credito, scadenza, checkout a blocchi
