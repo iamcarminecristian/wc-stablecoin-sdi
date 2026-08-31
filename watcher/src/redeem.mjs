@@ -5,6 +5,7 @@
 import {
   MONERIUM_BASE_URL, MONERIUM_CLIENT_ID, MONERIUM_CLIENT_SECRET,
   MONERIUM_CHAIN, MONERIUM_IBAN, MERCHANT_ADDRESS, MERCHANT_SIGNER_KEY,
+  MERCHANT_FIRST_NAME, MERCHANT_LAST_NAME, MERCHANT_COUNTRY,
 } from './config.mjs';
 
 // Gli endpoint autenticati richiedono l'header di versione: senza, l'API
@@ -20,7 +21,8 @@ let tokenCache = { valore: null, scadenza: 0 };
 export function configurazioneRimborsoCompleta() {
   return Boolean(
     MONERIUM_CLIENT_ID && MONERIUM_CLIENT_SECRET &&
-    MONERIUM_CHAIN && MONERIUM_IBAN && MERCHANT_ADDRESS && MERCHANT_SIGNER_KEY
+    MONERIUM_CHAIN && MONERIUM_IBAN && MERCHANT_ADDRESS && MERCHANT_SIGNER_KEY &&
+    MERCHANT_FIRST_NAME && MERCHANT_LAST_NAME
   );
 }
 
@@ -102,7 +104,14 @@ export async function disponiRimborso(importo) {
       chain: MONERIUM_CHAIN,
       message: messaggio,
       signature,
-      counterpart: { identifier: { standard: 'iban', iban: MONERIUM_IBAN } },
+      counterpart: {
+        identifier: { standard: 'iban', iban: MONERIUM_IBAN },
+        details: {
+          firstName: MERCHANT_FIRST_NAME,
+          lastName: MERCHANT_LAST_NAME,
+          ...(MERCHANT_COUNTRY ? { country: MERCHANT_COUNTRY } : {}),
+        },
+      },
     }),
   }, token);
 }

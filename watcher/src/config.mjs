@@ -52,6 +52,15 @@ export const MONERIUM_CHAIN = process.env.MONERIUM_CHAIN ?? '';
 export const MONERIUM_IBAN = process.env.MONERIUM_IBAN ?? '';
 export const MERCHANT_ADDRESS = process.env.MONERIUM_WALLET_ADDRESS ?? '';
 
+// Anagrafica del beneficiario del rimborso, che e' l'esercente stesso.
+// L'emittente la esige: un ordine di riscatto senza counterpart.details viene
+// rifiutato con 400 «Details attribute is missing from JSON», e con i soli
+// nome e cognome mancanti con «field is required» su entrambi. Il paese e'
+// facoltativo e viene inviato solo se configurato.
+export const MERCHANT_FIRST_NAME = process.env.MERCHANT_FIRST_NAME ?? '';
+export const MERCHANT_LAST_NAME = process.env.MERCHANT_LAST_NAME ?? '';
+export const MERCHANT_COUNTRY = process.env.MERCHANT_COUNTRY ?? '';
+
 // Unica chiave privata presente nel sistema: quella dell'esercente sul proprio
 // indirizzo di incasso, necessaria a firmare gli ordini di rimborso. Vive qui
 // e non nel plugin, per le ragioni discusse nel paragrafo 4.4 della tesi.
