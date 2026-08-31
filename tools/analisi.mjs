@@ -22,10 +22,20 @@ const flag = (n) => process.argv.includes(`--${n}`);
 const DATASET = arg('dataset', 'docs/dataset/campagna.csv');
 const BASELINE = arg('baseline', 'docs/dataset/baseline-psp-2026-08-31.csv');
 
-// Parametri di conversione, con la loro provenienza. Vanno ridichiarati se le
-// misure vengono rifatte: sono osservazioni datate, non costanti.
-const PREZZO_GAS_GWEI = Number(arg('prezzo-gas', '0.005'));   // Base mainnet, base fee mediana, 31/08/2026
-const ETH_EUR = Number(arg('eth-eur', '2134.975'));           // Coinbase spot, 31/08/2026
+// Parametri di conversione, con la loro provenienza. Non sono costanti ma
+// distribuzioni osservate su finestre dichiarate, rilevate da
+// tools/parametri-mercato.mjs e riportate in docs/dataset/. Il costo in euro
+// esce percio' come intervallo: un solo valore attribuirebbe al risultato una
+// precisione che non ha, dato che il cambio varia di un fattore tre in due anni.
+//
+// Cambio ETH/EUR: 105 rilevazioni settimanali, 02/09/2024 - 31/08/2026.
+// Prezzo del gas su Base mainnet: 168 blocchi orari, 24/08/2026 - 31/08/2026.
+const GAS_P05 = Number(arg('gas-p05', '0.005'));
+const GAS_MED = Number(arg('gas-mediana', '0.005'));
+const GAS_P95 = Number(arg('gas-p95', '0.005015'));
+const ETH_P05 = Number(arg('eth-p05', '1486.54'));
+const ETH_MED = Number(arg('eth-mediana', '2244.07'));
+const ETH_P95 = Number(arg('eth-p95', '3784.77'));
 
 // --- lettura ---------------------------------------------------------------
 
@@ -186,25 +196,35 @@ const paypal = tariffa('PayPal', 'PayPal e Paga a rate nazionale');
 const paypalCarta = tariffa('PayPal', 'elaborazione delle carte');
 
 console.log('\n=== 6.3 Costo per transazione (EUR) ===');
-console.log(`prezzo del gas ${PREZZO_GAS_GWEI} gwei (Base mainnet), ETH/EUR ${ETH_EUR}`);
+console.log(`gas su Base: p05 ${GAS_P05} | mediana ${GAS_MED} | p95 ${GAS_P95} gwei`);
+console.log(`cambio ETH/EUR: p05 ${ETH_P05} | mediana ${ETH_MED} | p95 ${ETH_P95}`);
 console.log('stablecoin: il costo di rete lo sostiene il cliente; l\'emittente non applica commissioni all\'esercente');
-console.log('\nimporto   gas(u)  rete(EUR)  Stripe   PayPal   PayPal carta   rete/Stripe');
+console.log('\nimporto   gas(u)   rete favor.  rete centr.  rete sfav.   Stripe   PayPal   PayPal carta');
 const costi = [];
+const inEuro = (gas, gwei, eur) => (gas === null ? null : gas * gwei * 1e-9 * eur);
 for (const i of importi) {
   const g = perImporto.get(i);
   const gasMed = riassumi(g.map((r) => num(r.gas_usato)))?.mediana ?? null;
-  const rete = gasMed === null ? null : (gasMed * PREZZO_GAS_GWEI * 1e-9) * ETH_EUR;
+  const favorevole = inEuro(gasMed, GAS_P05, ETH_P05);
+  const centrale = inEuro(gasMed, GAS_MED, ETH_MED);
+  const sfavorevole = inEuro(gasMed, GAS_P95, ETH_P95);
   const s = stripe ? i * stripe.pct / 100 + stripe.fisso : null;
   const p = paypal ? i * paypal.pct / 100 + paypal.fisso : null;
   const pc = paypalCarta ? i * paypalCarta.pct / 100 + paypalCarta.fisso : null;
-  costi.push({ importo: i, gas: gasMed, rete, stripe: s, paypal: p, paypalCarta: pc });
+  costi.push({ importo: i, gas: gasMed, favorevole, centrale, sfavorevole, stripe: s, paypal: p, paypalCarta: pc });
   console.log(
     String(i.toFixed(2)).padStart(7),
     String(gasMed ?? '—').padStart(7),
-    f(rete, 5).padStart(10),
-    f(s).padStart(8), f(p).padStart(8), f(pc).padStart(14),
-    (rete && s ? (rete / s * 100).toFixed(3) + ' %' : '—').padStart(13)
+    f(favorevole, 6).padStart(12), f(centrale, 6).padStart(12), f(sfavorevole, 6).padStart(12),
+    f(s).padStart(8), f(p).padStart(8), f(pc).padStart(14)
   );
+}
+// Il rapporto piu' istruttivo non e' quello con la tariffa complessiva ma con
+// la sola componente fissa, che il costo di rete deve battere anche
+// sull'importo piu' piccolo perche' il confronto regga a ogni scala.
+if (stripe && costi.length) {
+  const peggiore = Math.max(...costi.map((c) => c.sfavorevole ?? 0));
+  console.log(`\ncaso di rete piu' oneroso osservato: ${peggiore.toFixed(6)} EUR, pari a ${(peggiore / stripe.fisso * 100).toFixed(3)} % della sola componente fissa di Stripe (${stripe.fisso.toFixed(2)} EUR)`);
 }
 
 // --- 6.4 integrita' fiscale ------------------------------------------------
@@ -235,10 +255,11 @@ if (flag('latex')) {
   console.log('\\bottomrule\n\\end{tabular}');
 
   console.log('\n%%% --- 6.3 costi ---');
-  console.log('\\begin{tabular}{rrrrr}\n\\toprule');
-  console.log('Importo & Rete & Stripe & PayPal & PayPal carta \\\\\n\\midrule');
+  console.log('\\begin{tabular}{rrrrrr}\n\\toprule');
+  console.log('Importo & \\multicolumn{3}{c}{Costo di rete} & Stripe & PayPal \\\\');
+  console.log(' & favorevole & centrale & sfavorevole & & \\\\\n\\midrule');
   for (const c of costi) {
-    console.log(`${c.importo.toFixed(2)} & ${f(c.rete, 5)} & ${f(c.stripe)} & ${f(c.paypal)} & ${f(c.paypalCarta)} \\\\`);
+    console.log(`${c.importo.toFixed(2)} & ${f(c.favorevole, 6)} & ${f(c.centrale, 6)} & ${f(c.sfavorevole, 6)} & ${f(c.stripe)} & ${f(c.paypal)} \\\\`);
   }
   console.log('\\bottomrule\n\\end{tabular}');
 }

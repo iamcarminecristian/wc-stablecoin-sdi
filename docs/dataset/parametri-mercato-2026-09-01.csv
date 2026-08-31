@@ -1,0 +1,3 @@
+grandezza,unita,n,min,p05,mediana,p95,max,finestra_da,finestra_a,fonte
+cambio_eth_eur,EUR,105,1378.6542515811666,1486.5411349253861,2244.065040439353,3784.766689235299,4081.4509814302314,2024-09-02,2026-08-31,https://api.coinbase.com/v2/prices/ETH-EUR/spot
+prezzo_gas_base,gwei,168,0.005,0.005,0.005,0.00501512165,0.012178457,2026-08-24T23:25:41.000Z,2026-08-31T22:25:41.000Z,https://mainnet.base.org
