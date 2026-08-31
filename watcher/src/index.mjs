@@ -118,6 +118,7 @@ async function confermaEnotifica(testa) {
       importo,
       payer: p.payer,
       blocco: p.blocco,
+      conferme: CONFIRMATIONS,
       t1: p.t1,
       t2,
       gasUsato: p.gasUsato,
@@ -159,7 +160,7 @@ async function rimborsa(orderRef, importo) {
     // rileva prima della chiamata, cosi' la latenza di rete dell'emittente
     // ricade nel regolamento e non sparisce dalla misura.
     const t4 = Date.now() / 1000;
-    const ordine = await disponiRimborso(importo);
+    const ordine = await disponiRimborso(importo, orderRef);
     console.log(`[RIMBORSO]   disposto per ${orderRef.slice(0, 10)}: ordine ${ordine.id}, stato ${ordine.state}`);
 
     await notificaRimborso({ orderRef, stato: ordine.state ?? 'placed', ordineId: ordine.id, t4 });

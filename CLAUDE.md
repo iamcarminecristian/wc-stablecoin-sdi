@@ -27,7 +27,10 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 
 **Monerium** — sandbox `api.monerium.dev`; la produzione e' `.app`, non usarla. Applicazione su piano Private, autenticazione OAuth2 `client_credentials` su `POST /auth/token`.
 - Tutti gli endpoint autenticati (profili, indirizzi, IBAN, ordini, firme) richiedono l'header `Accept: application/vnd.monerium.api-v2+json`. Senza, l'API risponde 404 invece di un errore di validazione, il che rende la diagnosi fuorviante. Gli endpoint `/auth/token` e `/auth/context` non lo richiedono.
-- **Il timestamp del messaggio di rimborso vuole i secondi**, azzerati. La documentazione parla di precisione al minuto e questo induce a ometterli, ma l'API rifiuta il valore troncato con `invalid timestamp format`.
+- **Il timestamp del messaggio di rimborso vuole i secondi, e vuole quelli veri.** La documentazione parla di precisione al minuto: questo induce sia a ometterli, e l'API rifiuta il valore troncato con `invalid timestamp format`, sia ad azzerarli, e allora due rimborsi di pari importo maturati nello stesso minuto producono lo stesso messaggio firmato e il secondo viene respinto con `Duplicate order`. In campagna succede a ogni coppia di ripetizioni.
+- **`counterpart.details` e' obbligatorio** negli ordini di riscatto: senza, 400 «Details attribute is missing from JSON»; con il solo `name`, «field is required» su `firstName` e `lastName`. Il `country` e' facoltativo.
+- Il campo `memo` e' accettato sugli ordini di riscatto e restituito invariato: ci viaggia il riferimento dell'ordine, cosi' il rimborso e' riconducibile alla transazione senza accoppiarlo per importo e istante.
+- **Nessuna commissione.** Il listino dichiara «Currently, Monerium is not charging any fees» su emissione, riscatto, bonifici SEPA, IBAN e accesso API; l'oggetto ordine non espone alcun campo di costo. Fonte: <https://monerium.com/fee-schedule/>, consultata il 31/08/2026.
 - **Lo stato dell'ordine sta in `state`, non in `meta.state`**: dentro `meta` ci sono solo gli istanti e gli hash. Stati terminali: `processed`, `rejected`, `declined`.
 - Il bonifico simulato segue l'IBAN, non l'indirizzo selezionato nel pannello: per instradarlo altrove si sposta l'IBAN con `PATCH /ibans/{iban}`.
 - Chain in uso: **Base Sepolia** (`basesepolia`, chain id 84532), l'unica con IBAN approvato sul wallet. Il piano di luglio ipotizzava Ethereum Sepolia: non e' la chain reale. Gnosis Chiado e' abilitato ma senza IBAN, quindi inutilizzabile per i test.
@@ -38,6 +41,9 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 - Autenticazione con il Bearer token della sezione Autenticazione della dashboard, tipo Sandbox. **Non** e' la "API Key" mostrata piu' in alto nella stessa pagina: sono due credenziali distinte.
 - Prerequisito a qualsiasi chiamata: impostare il credito sandbox da dashboard, anche se le richieste di test sono gratuite.
 - `fiscal_id` in `BusinessRegistryConfiguration` accetta sia partita IVA sia codice fiscale personale, senza prefisso IT.
+- **Le notifiche del SdI si leggono in due modi**, alternativi: callback registrate con `POST /api_configurations` (evento `customer-notification`), impraticabili per un'installazione locale non raggiungibile dall'esterno, oppure interrogazione di `GET /invoices_notifications/{uuid}` — l'identificativo va nel percorso, come parametro di query risponde `400 uuid is required`.
+- **I valori di `marking` usano il trattino**: `sent`, `delivered`, `delivered-pa`, `not-delivered`, `rejected`. Scriverli con il carattere di sottolineatura produce un confronto sempre falso.
+- Il silenzio sulle ricevute non e' di per se' un'anomalia: l'Agenzia delle Entrate dichiara tempi «da pochi minuti ad un massimo di 5 giorni». L'osservazione va condotta su giorni, e la riverifica del plugin copre ora poco piu' di nove giorni. Analisi in `docs/sdi-notifiche.md`.
 - L'XML richiede la dichiarazione esplicita del namespace sul tag radice, che l'esempio ufficiale della documentazione Openapi omette: `xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"`.
 - L'attributo `versione` sul tag radice deve coincidere esattamente con `<FormatoTrasmissione>`, altrimenti il SdI scarta la fattura con errore 00428.
 - Il Codice Destinatario da registrare sull'Agenzia delle Entrate serve solo al ciclo passivo: per il nostro caso, solo ciclo attivo, non serve.

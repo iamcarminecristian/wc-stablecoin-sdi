@@ -63,9 +63,14 @@ async function accessToken() {
 //   Send <VALUTA> <IMPORTO> to <IBAN> at <TIMESTAMP RFC3339 al minuto>
 function messaggioOrdine(importo, iban) {
   const t = new Date(Date.now() + ANTICIPO_MS);
-  t.setSeconds(0, 0);
-  // I secondi restano, azzerati: la documentazione parla di precisione al
-  // minuto e questo induce a ometterli, ma l'API rifiuta il timestamp senza.
+  // I secondi vanno indicati e vanno lasciati al valore reale. La
+  // documentazione parla di precisione al minuto, il che induce sia a ometterli
+  // - e l'API rifiuta il timestamp senza - sia ad azzerarli. Azzerarli e'
+  // peggio: due rimborsi di pari importo maturati nello stesso minuto
+  // produrrebbero il medesimo messaggio firmato e il secondo verrebbe respinto
+  // con «Duplicate order». Accade regolarmente in una campagna di misura, dove
+  // piu' pagamenti uguali raggiungono la finalita' nello stesso blocco.
+  t.setMilliseconds(0);
   const ts = t.toISOString().replace(/\.\d{3}Z$/, 'Z');
   return `Send EUR ${importo} to ${iban} at ${ts}`;
 }
@@ -88,7 +93,7 @@ async function firma(messaggio) {
 /// Dispone il rimborso dell'importo incassato e restituisce l'ordine creato.
 /// Non attende lo stato finale: la sincronizzazione avviene per interrogazione
 /// separata, cosi' che il ciclo di osservazione non resti bloccato.
-export async function disponiRimborso(importo) {
+export async function disponiRimborso(importo, orderRef = null) {
   const token = await accessToken();
   const messaggio = messaggioOrdine(importo, MONERIUM_IBAN);
   const signature = await firma(messaggio);
@@ -104,6 +109,10 @@ export async function disponiRimborso(importo) {
       chain: MONERIUM_CHAIN,
       message: messaggio,
       signature,
+      // Il riferimento all'ordine rende il rimborso riconducibile alla
+      // transazione che lo ha originato senza doverli accoppiare per importo e
+      // istante, che e' proprio l'accoppiamento ambiguo da evitare.
+      ...(orderRef ? { memo: `wcsdi:${orderRef}` } : {}),
       counterpart: {
         identifier: { standard: 'iban', iban: MONERIUM_IBAN },
         details: {

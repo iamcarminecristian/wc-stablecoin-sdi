@@ -218,6 +218,7 @@ add_action( 'rest_api_init', function () {
 			'payer'        => array( 'required' => false, 'type' => 'string' ),
 			'block_number' => array( 'required' => false, 'type' => 'integer' ),
 			'chain_id'     => array( 'required' => false, 'type' => 'integer' ),
+			'conferme'     => array( 'required' => false, 'type' => 'integer' ),
 			// Marcatori e costo di rete: li conosce solo il servizio, che
 			// legge il blocco e la ricevuta della transazione (Capitolo 6).
 			't1'             => array( 'required' => false, 'type' => 'number' ),
@@ -262,6 +263,9 @@ add_action( 'rest_api_init', function () {
 			// La rete su cui il pagamento e' stato osservato: il gateway
 			// dichiara una configurazione, ma la misura vale per la rete su
 			// cui il servizio stava effettivamente ascoltando.
+			if ( isset( $request['conferme'] ) ) {
+				$order->update_meta_data( '_wcsdi_conferme', (int) $request['conferme'] );
+			}
 			if ( isset( $request['chain_id'] ) ) {
 				$order->update_meta_data( '_wcsdi_chain_id', (int) $request['chain_id'] );
 			}

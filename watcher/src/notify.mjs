@@ -33,6 +33,10 @@ export async function notificaPagamento(evento) {
     amount: evento.importo,
     payer: evento.payer,
     block_number: Number(evento.blocco),
+    // Criterio di finalita' in vigore al momento della misura. Senza, misure
+    // prese con criteri diversi finiscono indistinguibili nello stesso file e
+    // la latenza di conferma diventa un aggregato privo di significato.
+    conferme: Number(evento.conferme),
     // Marcatori e costo di rete per il protocollo KPI del Capitolo 6.
     // Solo questo servizio li conosce: il plugin non parla con la catena.
     t1: evento.t1,
