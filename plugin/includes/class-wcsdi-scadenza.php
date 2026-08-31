@@ -69,11 +69,18 @@ class WCSDI_Scadenza {
 			// Ha pagato, ma non abbastanza. L'ordine si chiude comunque,
 			// perché il riferimento non è più valido, ma la somma ricevuta
 			// resta evidenziata: va restituita, non trattenuta in silenzio.
+			// L'indirizzo di provenienza compare qui e in nessun altro punto:
+			// e' l'unica informazione con cui l'esercente puo' restituire la
+			// somma, ed e' la ragione per cui viene conservato (RNF-04). Senza,
+			// la nota chiederebbe di restituire un importo senza dire a chi.
+			$mittente = (string) $order->get_meta( '_wcsdi_payer' );
+
 			$order->update_status( 'failed', sprintf(
-				/* translators: 1: importo incassato, 2: importo dovuto */
-				__( 'Finestra di pagamento scaduta con un pagamento parziale: ricevuti %1$s EURe su %2$s dovuti. La somma va restituita al cliente.', 'wc-stablecoin-sdi' ),
+				/* translators: 1: importo incassato, 2: importo dovuto, 3: indirizzo di provenienza */
+				__( 'Finestra di pagamento scaduta con un pagamento parziale: ricevuti %1$s EURe su %2$s dovuti. La somma va restituita all\'indirizzo di provenienza %3$s.', 'wc-stablecoin-sdi' ),
 				wc_format_decimal( (string) $incassato ),
-				wc_format_decimal( (string) $dovuto )
+				wc_format_decimal( (string) $dovuto ),
+				'' !== $mittente ? $mittente : __( 'non registrato', 'wc-stablecoin-sdi' )
 			) );
 			$order->update_meta_data( '_wcsdi_da_restituire', wc_format_decimal( (string) $incassato ) );
 		} else {
