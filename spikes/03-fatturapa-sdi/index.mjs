@@ -8,7 +8,7 @@
 // al SdI di test tramite openapi.it e la lettura delle ricevute.
 //
 // Esecuzione:
-//   cp .env.example .env   (compilare i valori)
+//   cp ../../.env.example ../../.env   (compilare i valori, una volta sola)
 //   npm start              (nessuna dipendenza esterna)
 //
 // Output: fattura di esempio in ./out/IT01234567890_00001.xml
@@ -23,7 +23,11 @@
 // on-chain in AltriDatiGestionali sono in attesa di validazione del relatore.
 // ============================================================================
 
-import 'dotenv/config';
+// Configurazione dal .env unico alla root del monorepo. Il path e' risolto
+// rispetto a questo file, non alla cwd: lo spike parte sia da qui sia dalla root.
+// Le variabili gia' presenti nell'ambiente hanno la precedenza (override da shell).
+import { config } from 'dotenv';
+config({ path: new URL('../../.env', import.meta.url) });
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 // --- Ordine di esempio (nel sistema integrato arriva da WooCommerce) -------

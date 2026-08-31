@@ -7,15 +7,25 @@
 // (3) produrre un evento "pagamento confermato" idempotente.
 //
 // Esecuzione:
-//   cp .env.example .env   (compilare i valori)
+//   cp ../../.env.example ../../.env   (compilare i valori, una volta sola)
 //   npm install
 //   npm start
 //
-// Criterio di uscita dello spike: transazione di test su testnet rilevata
+// Rete di riferimento: Base Sepolia (chain id 84532, RPC https://sepolia.base.org),
+// l'unica su cui il wallet Monerium ha un IBAN approvato. TOKEN_ADDRESS e'
+// l'indirizzo del contratto EURe restituito da GET /tokens (spike 2).
+// Per la demo offline su anvil, sovrascrivere da shell:
+//   RPC_URL=http://localhost:8545 TOKEN_ADDRESS=0x... npm start
+//
+// Criterio di uscita dello spike: transazione di test su Base Sepolia rilevata
 // e confermata con log coerente (txHash, logIndex, importo, blocco).
 // ============================================================================
 
-import 'dotenv/config';
+// Configurazione dal .env unico alla root del monorepo. Il path e' risolto
+// rispetto a questo file, non alla cwd: lo spike parte sia da qui sia dalla root.
+// Le variabili gia' presenti nell'ambiente hanno la precedenza (override da shell).
+import { config } from 'dotenv';
+config({ path: new URL('../../.env', import.meta.url) });
 import { createPublicClient, http, parseAbiItem, formatUnits, getAddress } from 'viem';
 
 const RPC_URL       = required('RPC_URL');
