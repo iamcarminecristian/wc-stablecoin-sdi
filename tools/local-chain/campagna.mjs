@@ -39,6 +39,12 @@ const RIPETIZIONI = Number(arg('ripetizioni', '30'));
 const ALIQUOTA = Number(arg('aliquota', '22'));
 const ATTESA_MS = Number(arg('attesa', '600000'));
 
+// Identificativo della campagna, scritto su ogni ordine. Serve a separare
+// misure prodotte da disegni sperimentali diversi: senza, una correzione al
+// procedimento rende l'intero file un miscuglio di cui nessuno sa piu' dire
+// quale riga sia stata prodotta come.
+const CAMPAGNA = arg('campagna', new Date().toISOString().replace(/[:.]/g, '-'));
+
 const RPC = process.env.RPC_URL;
 const FORWARDER = arg('forwarder', process.env.FORWARDER_ADDRESS);
 const TOKEN = arg('token', process.env.TOKEN_ADDRESS);
@@ -99,6 +105,7 @@ foreach ( $importi as $lordo ) {
     "city" => "Roma", "state" => "RM", "country" => "IT",
   ), "billing" );
   $o->update_meta_data("_wcsdi_codice_fiscale", "RSSMRA80A01H501U");
+  $o->update_meta_data("_wcsdi_campagna", "${CAMPAGNA}");
   $item = new WC_Order_Item_Fee();
   $item->set_name("Transazione di campagna");
   $item->set_total($imponibile);
@@ -190,10 +197,26 @@ await pub.waitForTransactionReceipt({
   }),
 });
 
-console.log('Pago gli ordini...');
+// I pagamenti partono in ordine casuale, non nell'ordine in cui gli ordini
+// sono stati creati. Le transazioni si inviano una dopo l'altra e ciascuna
+// costa un secondo abbondante, mentre l'istante t0 e' fissato alla creazione:
+// pagare il paniere in ordine crescente attribuirebbe agli importi maggiori
+// una latenza sistematicamente piu' alta, che non e' una proprieta'
+// dell'importo ma della sua posizione nella coda. Randomizzare converte quel
+// termine sistematico in dispersione, che le ripetizioni mediano.
+function mescola(v) {
+  const a = v.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+console.log('Pago gli ordini in ordine casuale...');
 let pagati = 0;
 const falliti = [];
-for (const o of ordini) {
+for (const o of mescola(ordini)) {
   // Due tentativi: il primo fallimento su rete pubblica e' quasi sempre
   // transitorio, il secondo indica una causa reale che va registrata come
   // dato, perche' il tasso di errore e' uno dei KPI da misurare.

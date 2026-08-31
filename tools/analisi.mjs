@@ -96,15 +96,26 @@ const tutte = leggiCsv(DATASET);
 // Con --conferme=N si isola un singolo criterio di finalita', che e' il modo
 // corretto di analizzare un file che ne contiene piu' d'uno.
 const SOLO_CONFERME = arg('conferme', null);
+// Con --campagna=ID si isolano le misure di una singola campagna.
+const SOLO_CAMPAGNA = arg('campagna', null);
 
 const righe = tutte.filter((r) =>
   r.chain_id === '84532' && r.anomalia_orologio === '0' && r.conferme !== '' &&
-  (SOLO_CONFERME === null || r.conferme === SOLO_CONFERME));
+  (SOLO_CONFERME === null || r.conferme === SOLO_CONFERME) &&
+  (SOLO_CAMPAGNA === null || r.campagna === SOLO_CAMPAGNA));
 
 const scartate = tutte.length - righe.length;
 
 console.log(`Dataset: ${DATASET}`);
 console.log(`Righe totali ${tutte.length}, utilizzabili ${righe.length}, scartate ${scartate}`);
+
+const campagne = [...new Set(righe.map((r) => r.campagna || '(senza identificativo)'))];
+if (campagne.length > 1) {
+  console.log(`\nATTENZIONE: piu' campagne nello stesso insieme (${campagne.join(', ')}).`);
+  console.log('Isolarne una con --campagna=ID: disegni diversi non sono confrontabili.');
+} else {
+  console.log(`Campagna: ${campagne[0] ?? '(nessuna)'}`);
+}
 
 const criteri = [...new Set(righe.map((r) => r.conferme))];
 if (criteri.length > 1) {

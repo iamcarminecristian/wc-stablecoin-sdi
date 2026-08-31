@@ -101,6 +101,10 @@ class WCSDI_Misure {
 
 		return array(
 			'order_id'          => $order->get_id(),
+			// Campagna che ha prodotto la misura. Un cambiamento al procedimento
+			// rende le righe precedenti non confrontabili con le successive, e
+			// senza questo campo il file diventa un miscuglio indistinguibile.
+			'campagna'          => (string) $order->get_meta( '_wcsdi_campagna' ),
 			'binario'           => 'stablecoin',
 			'importo'           => wc_format_decimal( (string) $order->get_total(), 2 ),
 			'valuta'            => $order->get_currency(),

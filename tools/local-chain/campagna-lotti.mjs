@@ -36,6 +36,9 @@ const DECIMALI = Number(process.env.TOKEN_DECIMALS ?? '18');
 // Quanto si e' disposti ad attendere che l'emittente riemetta gli euro usciti
 // verso l'IBAN, prima di dichiarare la campagna interrotta per fondi.
 const ATTESA_FONDI_MS = Number(arg('attesa-fondi', String(15 * 60 * 1000)));
+
+// Tutti i lotti appartengono alla stessa campagna e ne portano l'identificativo.
+const CAMPAGNA = arg('campagna', new Date().toISOString().replace(/[:.]/g, '-'));
 const SONDAGGIO_MS = 15000;
 
 const radice = new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
@@ -48,6 +51,7 @@ const perLotto = IMPORTI.reduce((t, i) => t + parseUnits(i, DECIMALI), 0n);
 
 console.log(`Campagna a lotti: ${RIPETIZIONI} lotti da ${IMPORTI.length} ordini`);
 console.log(`Paniere: ${IMPORTI.join(', ')} EUR — ${formatUnits(perLotto, DECIMALI)} EURe per lotto`);
+console.log(`Campagna: ${CAMPAGNA}`);
 console.log(`Totale: ${IMPORTI.length * RIPETIZIONI} ordini, ${formatUnits(perLotto * BigInt(RIPETIZIONI), DECIMALI)} EURe movimentati\n`);
 
 if (flag('dry-run')) process.exit(0);
@@ -61,19 +65,34 @@ async function saldoEsercente() {
   });
 }
 
+// Soglia di ripartenza. Il saldo osservato in un singolo istante non dice se i
+// fondi siano fermi: durante e subito dopo un lotto ci sono riscatti in volo,
+// gli euro sono gia' usciti e l'emittente non li ha ancora riemessi, e il
+// saldo attraversa un minimo transitorio. Ripartire su quel minimo fa fallire
+// il lotto successivo per fondi. Si richiede percio' un margine oltre il
+// fabbisogno e, soprattutto, che il saldo sia stabile su due letture
+// consecutive: e' la stabilita', non il valore, a dire che il transitorio e'
+// finito.
+const MARGINE = perLotto / 5n;
+
 /// Attende che l'esercente possa finanziare un altro lotto. Restituisce false
 /// se la dotazione non si ricostituisce entro il tempo concesso: e' un esito
 /// legittimo dell'ambiente di prova, non un errore da nascondere.
 async function attendiCapienza() {
+  const soglia = perLotto + MARGINE;
   const scadenza = Date.now() + ATTESA_FONDI_MS;
-  let ultimo = -1n;
+  let precedente = null;
+  let annunciato = -1n;
+
   while (Date.now() < scadenza) {
     const s = await saldoEsercente();
-    if (s >= perLotto) return true;
-    if (s !== ultimo) {
-      console.log(`  in attesa di fondi: ${formatUnits(s, DECIMALI)} di ${formatUnits(perLotto, DECIMALI)} EURe`);
-      ultimo = s;
+    if (s >= soglia && precedente !== null && s === precedente) return true;
+    if (s !== annunciato) {
+      const stato = s >= soglia ? 'in assestamento' : 'in attesa di fondi';
+      console.log(`  ${stato}: ${formatUnits(s, DECIMALI)} di ${formatUnits(soglia, DECIMALI)} EURe`);
+      annunciato = s;
     }
+    precedente = s;
     await new Promise((r) => setTimeout(r, SONDAGGIO_MS));
   }
   return false;
@@ -86,6 +105,7 @@ function eseguiLotto() {
       `--importi=${IMPORTI.join(',')}`,
       '--ripetizioni=1',
       `--chain-id=${CHAIN_ID}`,
+      `--campagna=${CAMPAGNA}`,
     ], { cwd: radice });
 
     let coda = '';
@@ -105,7 +125,7 @@ for (let i = 1; i <= RIPETIZIONI; i++) {
 
   if (!(await attendiCapienza())) {
     console.error(`\nInterrotta al lotto ${i}: l'esercente non e' tornato capiente entro il tempo concesso.`);
-    console.error(`Servono ${formatUnits(perLotto, DECIMALI)} EURe, disponibili ${formatUnits(await saldoEsercente(), DECIMALI)}.`);
+    console.error(`Servono ${formatUnits(perLotto + MARGINE, DECIMALI)} EURe stabili, disponibili ${formatUnits(await saldoEsercente(), DECIMALI)}.`);
     break;
   }
 
