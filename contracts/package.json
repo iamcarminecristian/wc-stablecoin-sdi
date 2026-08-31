@@ -1,0 +1,13 @@
+{
+  "name": "wcsdi-contracts",
+  "private": true,
+  "type": "module",
+  "description": "Contratto di inoltro dei pagamenti EURe con riferimento all'ordine. Risolve la correlazione pagamento-ordine imposta dal vincolo di un solo indirizzo di incasso.",
+  "scripts": {
+    "compile": "node compile.mjs",
+    "deploy": "node deploy.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": { "viem": "^2.21.0", "dotenv": "^16.4.5" },
+  "devDependencies": { "solc": "^0.8.26" }
+}

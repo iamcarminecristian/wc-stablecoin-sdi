@@ -35,8 +35,20 @@ const CONFIRMATIONS = BigInt(process.env.CONFIRMATIONS ?? '12');
 const POLL_MS       = Number(process.env.POLL_MS ?? '5000');
 const DECIMALS      = Number(process.env.TOKEN_DECIMALS ?? '18');
 
+// Con FORWARDER_ADDRESS il rilevamento osserva gli eventi del contratto di
+// inoltro, che portano il riferimento dell'ordine: la correlazione e' esatta
+// anche fra ordini di pari importo nella stessa finestra. Senza, si ripiega
+// sugli eventi Transfer del token, che non trasportano alcuna causale: e' la
+// modalita' di confronto, utile a mostrare il limite che il contratto risolve.
+const FORWARDER = process.env.FORWARDER_ADDRESS
+  ? getAddress(process.env.FORWARDER_ADDRESS)
+  : null;
+
 const transferEvent = parseAbiItem(
   'event Transfer(address indexed from, address indexed to, uint256 value)'
+);
+const orderPaidEvent = parseAbiItem(
+  'event OrderPaid(bytes32 indexed orderRef, address indexed payer, uint256 amount)'
 );
 
 const client = createPublicClient({ transport: http(RPC_URL) });
@@ -53,19 +65,29 @@ function required(name) {
 }
 
 async function scan(fromBlock, toBlock) {
-  const logs = await client.getLogs({
-    address: TOKEN_ADDRESS,
-    event: transferEvent,
-    args: { to: WATCH_ADDRESS },
-    fromBlock,
-    toBlock,
-  });
+  const logs = FORWARDER
+    ? await client.getLogs({ address: FORWARDER, event: orderPaidEvent, fromBlock, toBlock })
+    : await client.getLogs({
+        address: TOKEN_ADDRESS,
+        event: transferEvent,
+        args: { to: WATCH_ADDRESS },
+        fromBlock,
+        toBlock,
+      });
+
   for (const log of logs) {
     const key = `${log.transactionHash}:${log.logIndex}`;
-    if (!seen.has(key)) {
-      seen.set(key, { blockNumber: log.blockNumber, value: log.args.value, from: log.args.from });
-      console.log(`[VISTO]      ${key} | ${formatUnits(log.args.value, DECIMALS)} | blocco ${log.blockNumber}`);
-    }
+    if (seen.has(key)) continue;
+
+    const value = FORWARDER ? log.args.amount : log.args.value;
+    const from  = FORWARDER ? log.args.payer  : log.args.from;
+    const ordine = FORWARDER ? log.args.orderRef : null;
+
+    seen.set(key, { blockNumber: log.blockNumber, value, from, ordine });
+    console.log(
+      `[VISTO]      ${key} | ${formatUnits(value, DECIMALS)} | blocco ${log.blockNumber}` +
+      (ordine ? ` | ordine ${ordine.slice(0, 10)}` : '')
+    );
   }
 }
 
@@ -77,13 +99,20 @@ function checkConfirmations(head) {
       confirmed.add(key);
       // Nel sistema integrato questo è il punto in cui il watcher notifica il
       // plugin via REST (POST /wcsdi/v1/payment-confirmed, autenticato).
-      console.log(`[CONFERMATO] ${key} | ${formatUnits(p.value, DECIMALS)} | profondità ${depth} blocchi`);
+      console.log(
+        `[CONFERMATO] ${key} | ${formatUnits(p.value, DECIMALS)} | profondità ${depth} blocchi` +
+        (p.ordine ? ` | ordine ${p.ordine.slice(0, 10)}` : '')
+      );
     }
   }
 }
 
 async function main() {
-  console.log(`Spike 1 avviato. Token ${TOKEN_ADDRESS}, incasso ${WATCH_ADDRESS}, finalità ${CONFIRMATIONS} conferme.`);
+  console.log(
+    FORWARDER
+      ? `Spike 1 avviato in modalità inoltro. Contratto ${FORWARDER}, finalità ${CONFIRMATIONS} conferme.`
+      : `Spike 1 avviato in modalità trasferimento diretto. Token ${TOKEN_ADDRESS}, incasso ${WATCH_ADDRESS}, finalità ${CONFIRMATIONS} conferme.`
+  );
   let last = await client.getBlockNumber();
   console.log(`Blocco di partenza: ${last}`);
 
