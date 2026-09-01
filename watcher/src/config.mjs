@@ -39,10 +39,13 @@ export const FORWARDER = getAddress(richiesta('FORWARDER_ADDRESS'));
 //                  richiederebbe una violazione della finalita' del consenso
 //                  sottostante, con la relativa penalizzazione.
 //
-// Il valore predefinito resta 'confirmations' per compatibilita' con le reti
-// di primo livello; su una rete di secondo livello va impostato 'finalized',
-// come argomentato nel Capitolo 6.
-export const FINALITY_MODE = process.env.FINALITY_MODE ?? 'confirmations';
+// Il valore predefinito e' 'finalized': e' l'unico che offre una garanzia
+// dimostrabile, e la conferma qui innesca due azioni irreversibili fuori dalla
+// catena, il riscatto verso l'IBAN e la trasmissione al SdI. Costa una ventina
+// di minuti su Base, meno di quattro su una rete a finalita' rapida.
+// Chi accetta di fidarsi del sequencer puo' passare a 'safe' o al conteggio
+// delle conferme, ma sceglie fiducia in un operatore, non una garanzia.
+export const FINALITY_MODE = process.env.FINALITY_MODE ?? 'finalized';
 if (!['confirmations', 'safe', 'finalized'].includes(FINALITY_MODE)) {
   console.error(`FINALITY_MODE non riconosciuto: ${FINALITY_MODE}`);
   process.exit(1);
