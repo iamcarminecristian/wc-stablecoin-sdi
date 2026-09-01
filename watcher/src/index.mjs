@@ -102,18 +102,11 @@ async function osserva(daBlocco, aBlocco) {
 /// Ultimo blocco che soddisfa il criterio di finalita' configurato, insieme
 /// all'istante da attribuire al marcatore t2.
 ///
-/// Con il conteggio delle conferme l'istante e' l'ora del blocco che porta la
-/// transazione alla profondita' richiesta: e' un'ora di catena, indipendente da
-/// quando il servizio se ne accorge, ed e' quindi la misura preferibile.
-///
-/// Con le etichette non esiste un blocco equivalente, e prendere l'ora della
-/// testa etichettata sarebbe un errore: quella testa porta l'ora in cui fu
-/// prodotta, che e' minuti nel passato, e le etichette avanzano a scatti di
-/// centinaia di blocchi, sicche' l'ora della testa non dice nulla su quando il
-/// pagamento sia diventato finale. Cio' che conta per l'esercente e' l'istante
-/// in cui il criterio risulta soddisfatto, perche' e' da li' che puo' agire: si
-/// adotta quello, con una quantizzazione pari all'intervallo di sondaggio,
-/// trascurabile rispetto ai minuti in gioco.
+/// Con le conferme l'istante e' l'ora del blocco che porta la transazione alla
+/// profondita' richiesta. Con le etichette non esiste un blocco equivalente:
+/// la testa etichettata porta l'ora in cui fu prodotta, minuti nel passato,
+/// mentre cio' che conta e' l'istante in cui il criterio risulta soddisfatto,
+/// quantizzato all'intervallo di sondaggio.
 async function testaFinale(testa) {
   if ('confirmations' === FINALITY_MODE) {
     return { numero: testa - CONFIRMATIONS, istante: null };
@@ -132,8 +125,7 @@ async function confermaEnotifica(testa) {
 
     const importo = formatUnits(p.valore, DECIMALS);
 
-    // t2 e' l'istante in cui l'incasso diventa certo per l'esercente secondo
-    // il criterio scelto.
+    // t2: l'incasso diventa certo per l'esercente.
     const t2 = null !== finale.istante
       ? finale.istante
       : await istanteBlocco(p.blocco + CONFIRMATIONS);
@@ -157,9 +149,7 @@ async function confermaEnotifica(testa) {
 
     if (!esito.ok) {
       console.error(`[NOTIFICA]   fallita per ${p.orderRef.slice(0, 10)}: ${esito.dettaglio}`);
-      // Un errore definitivo non migliora riprovando: si smette di insistere
-      // e si lascia traccia, altrimenti il servizio resterebbe bloccato su un
-      // evento che nessun tentativo puo' risolvere.
+      // Un errore definitivo non migliora riprovando.
       if (esito.definitivo) {
         notificate.add(k);
         inAttesa.delete(k);

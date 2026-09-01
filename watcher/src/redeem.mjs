@@ -63,13 +63,9 @@ async function accessToken() {
 //   Send <VALUTA> <IMPORTO> to <IBAN> at <TIMESTAMP RFC3339 al minuto>
 function messaggioOrdine(importo, iban) {
   const t = new Date(Date.now() + ANTICIPO_MS);
-  // I secondi vanno indicati e vanno lasciati al valore reale. La
-  // documentazione parla di precisione al minuto, il che induce sia a ometterli
-  // - e l'API rifiuta il timestamp senza - sia ad azzerarli. Azzerarli e'
-  // peggio: due rimborsi di pari importo maturati nello stesso minuto
-  // produrrebbero il medesimo messaggio firmato e il secondo verrebbe respinto
-  // con «Duplicate order». Accade regolarmente in una campagna di misura, dove
-  // piu' pagamenti uguali raggiungono la finalita' nello stesso blocco.
+  // I secondi servono al valore reale: omessi l'API rifiuta il formato,
+  // azzerati due rimborsi di pari importo nello stesso minuto producono lo
+  // stesso messaggio firmato e il secondo e' respinto come duplicato.
   t.setMilliseconds(0);
   const ts = t.toISOString().replace(/\.\d{3}Z$/, 'Z');
   return `Send EUR ${importo} to ${iban} at ${ts}`;
@@ -91,8 +87,7 @@ async function firma(messaggio) {
 }
 
 /// Dispone il rimborso dell'importo incassato e restituisce l'ordine creato.
-/// Non attende lo stato finale: la sincronizzazione avviene per interrogazione
-/// separata, cosi' che il ciclo di osservazione non resti bloccato.
+/// Non attende lo stato finale, per non bloccare il ciclo di osservazione.
 export async function disponiRimborso(importo, orderRef = null) {
   const token = await accessToken();
   const messaggio = messaggioOrdine(importo, MONERIUM_IBAN);
@@ -109,9 +104,8 @@ export async function disponiRimborso(importo, orderRef = null) {
       chain: MONERIUM_CHAIN,
       message: messaggio,
       signature,
-      // Il riferimento all'ordine rende il rimborso riconducibile alla
-      // transazione che lo ha originato senza doverli accoppiare per importo e
-      // istante, che e' proprio l'accoppiamento ambiguo da evitare.
+      // Rende il rimborso riconducibile alla transazione senza accoppiarli
+      // per importo e istante, che sarebbe ambiguo.
       ...(orderRef ? { memo: `wcsdi:${orderRef}` } : {}),
       counterpart: {
         identifier: { standard: 'iban', iban: MONERIUM_IBAN },

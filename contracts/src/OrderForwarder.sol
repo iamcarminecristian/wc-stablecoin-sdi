@@ -99,10 +99,8 @@ contract OrderForwarder {
         if (orderRef == bytes32(0)) revert RiferimentoNullo();
         if (amount == 0) revert ImportoNullo();
 
-        // Il valore di ritorno va controllato: l'ERC-20 lo prevede e il
-        // contratto EURe lo rispetta. Un token che non lo restituisse
-        // richiederebbe il pattern SafeERC20, non necessario qui perche' il
-        // token e' fissato alla costruzione e verificato in fase di deploy.
+        // Il valore di ritorno va controllato. SafeERC20 non serve: il token
+        // e' fissato alla costruzione e verificato in fase di deploy.
         if (!token.transferFrom(msg.sender, merchant, amount)) revert TrasferimentoFallito();
 
         emit OrderPaid(orderRef, msg.sender, amount);
