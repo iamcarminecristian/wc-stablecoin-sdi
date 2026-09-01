@@ -287,11 +287,28 @@ class WCSDI_Fatturazione {
 		return 21600;      // poi ogni sei ore
 	}
 
+	/**
+	 * Accoda la verifica successiva.
+	 *
+	 * Il controllo anti-duplicato guarda le sole azioni in attesa e non usa
+	 * as_has_scheduled_action, che considera in attesa anche quelle in corso.
+	 * Poiche' questo metodo viene chiamato dall'interno della verifica stessa,
+	 * quella funzione troverebbe l'azione che sta girando e concluderebbe che
+	 * il lavoro e' gia' accodato: il ciclo si fermerebbe dopo il primo giro,
+	 * senza errori e senza che nulla lo segnali.
+	 */
 	private static function accoda_verifica( $order_id, $eseguite ) {
 		if ( ! function_exists( 'as_schedule_single_action' ) ) {
 			return;
 		}
-		if ( as_has_scheduled_action( self::AZIONE_RICEVUTE, array( 'order_id' => (int) $order_id ), self::GRUPPO ) ) {
+		$in_attesa = as_get_scheduled_actions( array(
+			'hook'     => self::AZIONE_RICEVUTE,
+			'args'     => array( 'order_id' => (int) $order_id ),
+			'group'    => self::GRUPPO,
+			'status'   => ActionScheduler_Store::STATUS_PENDING,
+			'per_page' => 1,
+		), 'ids' );
+		if ( ! empty( $in_attesa ) ) {
 			return;
 		}
 		$attesa = self::attesa_verifica( $eseguite );
