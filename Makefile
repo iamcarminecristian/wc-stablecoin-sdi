@@ -23,3 +23,6 @@ contracts: ## compila e pubblica il contratto di inoltro sulla chain locale
 
 e2e:       ## verifica end-to-end: checkout, pagamento on-chain, stato dell'ordine
 	./tools/e2e-setup.sh
+
+analisi:   ## analisi statica del contratto con Slither (vedi docs/analisi-sicurezza.md)
+	cd contracts && slither src/OrderForwarder.sol
