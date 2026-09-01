@@ -122,7 +122,9 @@ console.log(`Dataset: ${DATASET}`);
 console.log(`Righe totali ${tutte.length}, utilizzabili ${righe.length}, scartate ${scartate}`);
 
 const campagne = [...new Set(righe.map((r) => r.campagna || '(senza identificativo)'))];
-if (campagne.length > 1) {
+if (CAMPAGNE_SCELTE !== null && CAMPAGNE_SCELTE.length > 1) {
+  console.log(`Campagne aggregate su richiesta: ${campagne.join(', ')}`);
+} else if (campagne.length > 1) {
   console.log(`\nATTENZIONE: piu' campagne nello stesso insieme (${campagne.join(', ')}).`);
   console.log('Isolarne una con --campagna=ID: disegni diversi non sono confrontabili.');
 } else {
