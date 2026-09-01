@@ -106,13 +106,15 @@ const tutte = leggiCsv(DATASET);
 // Con --conferme=N si isola un singolo criterio di finalita', che e' il modo
 // corretto di analizzare un file che ne contiene piu' d'uno.
 const SOLO_CONFERME = arg('conferme', null);
-// Con --campagna=ID si isolano le misure di una singola campagna.
+// Con --campagna=ID si isolano le misure di una campagna; piu' identificativi
+// separati da virgola aggregano campagne dello stesso disegno (le tranche).
 const SOLO_CAMPAGNA = arg('campagna', null);
+const CAMPAGNE_SCELTE = SOLO_CAMPAGNA === null ? null : SOLO_CAMPAGNA.split(',');
 
 const righe = tutte.filter((r) =>
   r.chain_id === '84532' && r.anomalia_orologio === '0' && r.conferme !== '' &&
   (SOLO_CONFERME === null || r.conferme === SOLO_CONFERME) &&
-  (SOLO_CAMPAGNA === null || r.campagna === SOLO_CAMPAGNA));
+  (CAMPAGNE_SCELTE === null || CAMPAGNE_SCELTE.includes(r.campagna)));
 
 const scartate = tutte.length - righe.length;
 
