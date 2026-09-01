@@ -26,20 +26,29 @@ class WCSDI_Fattura {
 	 * in un solo punto, non una revisione sparsa nel codice.
 	 *
 	 * TIPO_DOCUMENTO       TD01, cessione di beni o prestazione di servizi.
-	 * MODALITA_PAGAMENTO   MP05 (bonifico): rappresenta la sostanza dell'incasso
-	 *                      a regime, in cui le disponibilità affluiscono come
-	 *                      accredito SEPA generato dal rimborso.
+	 * MODALITA_PAGAMENTO   MP05 (bonifico). Nessuno dei codici da MP01 a MP23
+	 *                      descrive un incasso in moneta elettronica su registro
+	 *                      distribuito, e la tabella non prevede un residuale.
+	 *                      MP05 descrive il tratto che porta gli euro
+	 *                      all'esercente, cioe' il riscatto, non il pagamento
+	 *                      del cliente: per questo e' accompagnato da ADG_PAY_MODE,
+	 *                      che dichiara la natura effettiva dell'incasso.
 	 * CONDIZIONI_PAGAMENTO TP02, pagamento completo in una soluzione.
 	 * ADG_*                Riferimenti on-chain in AltriDatiGestionali, blocco
 	 *                      destinato dalle specifiche alle informazioni
 	 *                      concordate fra le parti (RF-09).
+	 * CAUSALE_INCASSO      L'hash della transazione viaggia in Causale, che e'
+	 *                      lungo 200 caratteri: RiferimentoTesto si ferma a 60 e
+	 *                      obbligherebbe a troncare un valore di 66.
 	 */
 	const TIPO_DOCUMENTO       = 'TD01';
 	const MODALITA_PAGAMENTO   = 'MP05';
 	const CONDIZIONI_PAGAMENTO = 'TP02';
-	const ADG_TX_HASH          = 'TX-HASH';
 	const ADG_CHAIN            = 'CHAIN';
 	const ADG_PAY_ADDR         = 'PAY-ADDR';
+	const ADG_PAY_MODE         = 'PAY-MODE';
+	const PAY_MODE_VALORE      = 'Incasso in EMT su DLT; MP05 si riferisce al riscatto SEPA';
+	const CAUSALE_INCASSO      = 'Incasso in EMT EURe. Hash transazione: %s';
 	/** Fine delle scelte sotto gate fiscale. */
 
 	/**
@@ -54,8 +63,9 @@ class WCSDI_Fattura {
 
 	const NS_FATTURA = 'http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2';
 
-	/** Lunghezza massima di RiferimentoTesto secondo le specifiche. */
+	/** Lunghezze massime dei campi, da schema XSD del tracciato. */
 	const MAX_RIFERIMENTO_TESTO = 60;
+	const MAX_CAUSALE           = 200;
 
 	/**
 	 * Numero progressivo della fattura, univoco nell'anno.
@@ -169,6 +179,11 @@ class WCSDI_Fattura {
 		$w->writeElement( 'Data', self::data_effettuazione( $order ) );
 		$w->writeElement( 'Numero', (string) $numero );
 		$w->writeElement( 'ImportoTotaleDocumento', self::dec( $totale ) );
+		// Causale chiude la sequenza di DatiGeneraliDocumento: un elemento
+		// fuori posto fa scartare il documento.
+		foreach ( self::causali( $order ) as $causale ) {
+			$w->writeElement( 'Causale', $causale );
+		}
 		$w->endElement();
 		$w->endElement();
 
@@ -284,9 +299,11 @@ class WCSDI_Fattura {
 	 */
 	private static function riferimenti_onchain( WC_Order $order ) {
 		$valori = array(
-			self::ADG_TX_HASH  => (string) $order->get_meta( '_wcsdi_tx_hash' ),
 			self::ADG_CHAIN    => (string) $order->get_meta( '_wcsdi_chain' ),
 			self::ADG_PAY_ADDR => (string) $order->get_meta( '_wcsdi_receive_address' ),
+			// Qualifica MP05: senza, il documento dichiarerebbe un bonifico
+			// che il cliente non ha disposto.
+			self::ADG_PAY_MODE => self::PAY_MODE_VALORE,
 		);
 
 		$out = array();
@@ -294,12 +311,23 @@ class WCSDI_Fattura {
 			if ( '' === $valore ) {
 				continue;
 			}
-			// Il campo è limitato a 60 caratteri e un hash di transazione ne
-			// occupa 66: eccede e va troncato. La perdita è accettabile perché
-			// il prefisso resta sufficiente a individuare la transazione.
 			$out[] = array( 'tipo' => $tipo, 'valore' => substr( $valore, 0, self::MAX_RIFERIMENTO_TESTO ) );
 		}
 		return $out;
+	}
+
+	/**
+	 * Causali del documento. Vi viaggia l'hash della transazione, che in
+	 * RiferimentoTesto non entrerebbe: sono 66 caratteri contro i 60 ammessi,
+	 * mentre Causale ne accetta 200. Troncarlo lascerebbe in fattura un valore
+	 * che non e' l'identificativo della transazione.
+	 */
+	private static function causali( WC_Order $order ) {
+		$hash = (string) $order->get_meta( '_wcsdi_tx_hash' );
+		if ( '' === $hash ) {
+			return array();
+		}
+		return array( substr( sprintf( self::CAUSALE_INCASSO, $hash ), 0, self::MAX_CAUSALE ) );
 	}
 
 	private static function anagrafica_cessionario( XMLWriter $w, WC_Order $order ) {
