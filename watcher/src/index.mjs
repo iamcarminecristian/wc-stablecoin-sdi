@@ -102,20 +102,24 @@ async function osserva(daBlocco, aBlocco) {
 /// Ultimo blocco che soddisfa il criterio di finalita' configurato, insieme
 /// all'istante da attribuire al marcatore t2.
 ///
-/// Con il conteggio delle conferme l'istante e' quello del blocco che porta la
-/// transazione alla profondita' richiesta, ed e' un'ora di catena, indipendente
-/// da quando il servizio se ne accorge. Con le etichette non esiste un blocco
-/// equivalente, perche' l'avanzamento dipende da eventi del primo livello: si
-/// adotta l'ora del blocco che in quel momento e' la testa sicura o
-/// finalizzata, e la misura porta percio' una quantizzazione pari
-/// all'intervallo di sondaggio, trascurabile rispetto ai minuti in gioco.
+/// Con il conteggio delle conferme l'istante e' l'ora del blocco che porta la
+/// transazione alla profondita' richiesta: e' un'ora di catena, indipendente da
+/// quando il servizio se ne accorge, ed e' quindi la misura preferibile.
+///
+/// Con le etichette non esiste un blocco equivalente, e prendere l'ora della
+/// testa etichettata sarebbe un errore: quella testa porta l'ora in cui fu
+/// prodotta, che e' minuti nel passato, e le etichette avanzano a scatti di
+/// centinaia di blocchi, sicche' l'ora della testa non dice nulla su quando il
+/// pagamento sia diventato finale. Cio' che conta per l'esercente e' l'istante
+/// in cui il criterio risulta soddisfatto, perche' e' da li' che puo' agire: si
+/// adotta quello, con una quantizzazione pari all'intervallo di sondaggio,
+/// trascurabile rispetto ai minuti in gioco.
 async function testaFinale(testa) {
   if ('confirmations' === FINALITY_MODE) {
-    return { numero: testa - CONFIRMATIONS, perBlocco: (b) => b + CONFIRMATIONS };
+    return { numero: testa - CONFIRMATIONS, istante: null };
   }
   const blocco = await client.getBlock({ blockTag: FINALITY_MODE });
-  oraBlocco.set(blocco.number.toString(), Number(blocco.timestamp));
-  return { numero: blocco.number, perBlocco: () => blocco.number };
+  return { numero: blocco.number, istante: Date.now() / 1000 };
 }
 
 async function confermaEnotifica(testa) {
@@ -130,7 +134,9 @@ async function confermaEnotifica(testa) {
 
     // t2 e' l'istante in cui l'incasso diventa certo per l'esercente secondo
     // il criterio scelto.
-    const t2 = await istanteBlocco(finale.perBlocco(p.blocco));
+    const t2 = null !== finale.istante
+      ? finale.istante
+      : await istanteBlocco(p.blocco + CONFIRMATIONS);
 
     const esito = await notificaPagamento({
       chainId: CHAIN_ID,

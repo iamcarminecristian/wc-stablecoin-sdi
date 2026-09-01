@@ -123,14 +123,24 @@ Il valore predefinito resta `confirmations`, per non cambiare il comportamento
 su una rete di primo livello dove quel criterio è corretto. Su una rete di
 secondo livello va impostato `finalized`.
 
-Una precisazione sulla misura. Con il conteggio delle conferme il marcatore t2 è
-l'ora del blocco che porta la transazione alla profondità richiesta, quindi
-un'ora di catena, indipendente da quando il servizio se ne accorge. Con le
-etichette non esiste un blocco equivalente, perché l'avanzamento dipende da
-eventi della rete sottostante: si adotta l'ora del blocco che in quel momento è
-la testa sicura o finalizzata, e la misura porta perciò una quantizzazione pari
-all'intervallo di sondaggio, cinque secondi, trascurabile rispetto ai minuti in
-gioco.
+Una precisazione sulla misura, che è costata una prima serie di dati da buttare.
+Con il conteggio delle conferme il marcatore t2 è l'ora del blocco che porta la
+transazione alla profondità richiesta: è un'ora di catena, indipendente da
+quando il servizio se ne accorge, ed è la misura preferibile.
+
+Con le etichette non esiste un blocco equivalente, e prendere l'ora della testa
+etichettata è un errore, che la prima esecuzione ha commesso. Quella testa porta
+l'ora in cui fu prodotta, che è minuti nel passato, e le etichette avanzano a
+scatti di centinaia di blocchi: l'ora della testa non dice nulla su quando il
+pagamento sia diventato finale. L'errore era riconoscibile dall'incoerenza fra
+le colonne, perché il riscatto parte subito dopo la conferma e la latenza di
+regolamento risultava superiore a quella di conferma di oltre mille secondi
+anziché di due.
+
+Ciò che conta per l'esercente è l'istante in cui il criterio risulta
+soddisfatto, perché è da lì che può agire: si adotta quello, con una
+quantizzazione pari all'intervallo di sondaggio, cinque secondi, trascurabile
+rispetto ai minuti in gioco.
 
 ## Una scelta che resta legittima
 
