@@ -45,6 +45,7 @@ Per i clienti azienda o professionista sempre; per i privati solo se la richiedo
 * Criterio di conferma e segreto configurabili dal pannello; endpoint di configurazione e heartbeat per il servizio di rilevamento.
 * Lock per ordine e validazione degli input sulla notifica di pagamento; margine di scadenza legato al criterio; riapertura di un ordine scaduto pagato in ritardo.
 * Informativa precontrattuale al checkout e istruzioni di pagamento nell'email.
+* Copia della fattura conservata in una cartella privata e consegnata al cliente per e-mail, allegata anche alle e-mail di ordine completato e di fattura (art. 1, c. 3, D.Lgs. 127/2015).
 
 = 0.1.0 =
 * Prima versione: gateway, contratto di inoltro, fatturazione, nota di credito, scadenza, checkout a blocchi, strumentazione di misura.

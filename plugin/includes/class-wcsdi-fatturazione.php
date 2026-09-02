@@ -150,6 +150,11 @@ class WCSDI_Fatturazione {
 
 			self::accoda_verifica( (int) $order_id, 0 );
 
+			// Copia al cliente (art. 1, c. 3, D.Lgs. 127/2015): la messa a
+			// disposizione nell'area riservata non basta.
+			WCSDI_Copia_Cliente::conserva_e_consegna( $order, $xml, $numero, $esito['uuid'] );
+			$order->save();
+
 		} catch ( WCSDI_SdI_Exception $e ) {
 			self::gestisci_errore( $order, $e, $tentativo );
 		}

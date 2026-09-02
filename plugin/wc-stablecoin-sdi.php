@@ -42,12 +42,14 @@ add_action( 'plugins_loaded', function () {
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-misure.php';
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-export.php';
 	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-checkout.php';
+	require_once WCSDI_PLUGIN_DIR . 'includes/class-wcsdi-copia-cliente.php';
 
 	WCSDI_Fatturazione::init();
 	WCSDI_Nota_Credito::init();
 	WCSDI_Scadenza::init();
 	WCSDI_Export::init();
 	WCSDI_Checkout::init();
+	WCSDI_Copia_Cliente::init();
 
 	// La fatturazione parte alla conferma del pagamento, non alla creazione
 	// dell'ordine: l'operazione si considera effettuata quando il pagamento
