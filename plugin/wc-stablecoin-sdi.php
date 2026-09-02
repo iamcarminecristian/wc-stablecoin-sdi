@@ -118,12 +118,21 @@ add_action( 'plugins_loaded', function () {
  * esiste per gestire.
  */
 function wcsdi_trova_ordine_da_riferimento( $ref ) {
+	// Il data store classico (post) ignora del tutto la meta_query passata a
+	// wc_get_orders: senza il filtro registrato qui sotto la query restituiva
+	// i cinque ordini piu' recenti e la riverifica del metadato li scartava,
+	// sicche' un pagamento veniva trovato solo se il suo ordine era fra gli
+	// ultimi cinque creati. Scoperto il 2 settembre 2026 con tre ordini su
+	// otto di un lotto finiti fra gli orfani. La variabile propria
+	// wcsdi_order_ref e' tradotta in meta_query dal filtro per il data store
+	// classico; il data store HPOS accetta la meta_query direttamente.
 	$ordini = wc_get_orders( array(
-		'limit'      => 5,
-		'status'     => 'any',
-		'orderby'    => 'date',
-		'order'      => 'DESC',
-		'meta_query' => array(
+		'limit'           => 5,
+		'status'          => 'any',
+		'orderby'         => 'date',
+		'order'           => 'DESC',
+		'wcsdi_order_ref' => $ref,
+		'meta_query'      => array(
 			array(
 				'key'     => '_wcsdi_order_ref',
 				'value'   => $ref,
@@ -143,6 +152,21 @@ function wcsdi_trova_ordine_da_riferimento( $ref ) {
 	}
 	return null;
 }
+
+/**
+ * Traduzione della variabile wcsdi_order_ref in meta_query per il data store
+ * classico, che altrimenti non filtra per metadato (vedi la ricerca sopra).
+ */
+add_filter( 'woocommerce_order_data_store_cpt_get_orders_query', function ( $query, $query_vars ) {
+	if ( ! empty( $query_vars['wcsdi_order_ref'] ) ) {
+		$query['meta_query'][] = array(
+			'key'     => '_wcsdi_order_ref',
+			'value'   => (string) $query_vars['wcsdi_order_ref'],
+			'compare' => '=',
+		);
+	}
+	return $query;
+}, 10, 2 );
 
 /**
  * Compatibilità dichiarata con HPOS e checkout a blocchi (RNF-05).
