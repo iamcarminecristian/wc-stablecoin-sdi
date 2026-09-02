@@ -268,8 +268,9 @@ function registraGas(o, r) {
 const tiDaScrivere = new Map();
 function scriviTi(forza = false) {
   if (tiDaScrivere.size === 0 || (!forza && tiDaScrivere.size < 8)) return;
+  // Il JSON passa per json_decode: un oggetto JSON non e' un letterale PHP.
   const php = `
-$m = ${JSON.stringify(Object.fromEntries(tiDaScrivere))};
+$m = json_decode( '${JSON.stringify(Object.fromEntries(tiDaScrivere))}', true );
 foreach ( $m as $id => $ts ) {
   $o = wc_get_order( (int) $id );
   if ( $o ) { WCSDI_Misure::segna( $o, 'ti', (float) $ts ); $o->save(); }
