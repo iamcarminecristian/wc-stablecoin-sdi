@@ -680,10 +680,25 @@ const distribNonSent = conteggiaOccorrenze(nonPiuSent, 'fattura_stato');
 console.log(`\nfatture il cui stato e' mutato da 'sent': ${nonPiuSent.length}/${conFattura.length}`);
 if (nonPiuSent.length) console.log(`  distribuzione: ${Object.entries(distribNonSent).map(([k, v]) => `${k} ${v}`).join(', ')}`);
 
+// Distanza fra effettuazione (t3) e trasmissione: la fattura immediata va
+// trasmessa entro dodici giorni (art. 21, c. 4, DPR 633/72). Una coda ferma
+// consuma il termine in silenzio, e questo e' il numero che lo dice.
+const GIORNI_TERMINE_FATTURA = 12;
+const latFattura = riassumi(righe.map((r) => num(r.lat_fattura)));
+if (latFattura) {
+  console.log(`\nlatenza di trasmissione della fattura (t3 -> trasmissione, secondi): n=${latFattura.n} mediana ${f(latFattura.mediana)} p95 ${f(latFattura.p95)} max ${f(latFattura.max)}`);
+  const oltre = righe.filter((r) => num(r.lat_fattura) !== null && num(r.lat_fattura) > GIORNI_TERMINE_FATTURA * 86400).length;
+  console.log(`fatture trasmesse oltre il termine di ${GIORNI_TERMINE_FATTURA} giorni: ${oltre}/${latFattura.n} (massimo osservato ${f(latFattura.max / 86400, 3)} giorni)`);
+} else {
+  console.log('\nlatenza di trasmissione della fattura: colonna lat_fattura assente (esportazione anteriore al 2 settembre 2026)');
+}
+
 const fiscaleRisultati = {
   conFattura: conFattura.length,
   accettate: accettate.length,
   statiFattura,
+  latFattura,
+  oltreTermineFattura: latFattura ? righe.filter((r) => num(r.lat_fattura) !== null && num(r.lat_fattura) > GIORNI_TERMINE_FATTURA * 86400).length : null,
   duplicatiAnalizzati: duplicatiAnalizzati.length,
   duplicatiFile: duplicatiFile.length,
   buchi,
