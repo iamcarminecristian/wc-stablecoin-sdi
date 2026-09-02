@@ -81,7 +81,7 @@ Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal co
 
 ## Ambiente di misura su Base Sepolia
 
-- Contratto di inoltro pubblicato: `0x91f7B2252256a112Fe12Ee79BA58e1cb290D21C3`
+- Contratto di inoltro pubblicato: `0x91f7B2252256a112Fe12Ee79BA58e1cb290D21C3`, compilato con solc 0.8.36 (ottimizzatore, 200 run) e verificato su Blockscout il 2 settembre 2026 (corrispondenza del bytecode, impronta dei metadati diversa: "partially verified"). L'artefatto tracciato in `contracts/build/` e' quello pubblicato: non ricompilare per committare
 - Token EURe: `0x29F37F6adCa168B79B8d9567eab9BE3fBF21db85`
 - Indirizzo di incasso: quello di `MERCHANT_SIGNER_PRIVATE_KEY`, con l'IBAN collegato
 - `CAMPAGNA_PAYER_KEY` e' il cliente simulato: identita' distinta dall'esercente, perche' un pagamento verso se stessi non riproduce il flusso
