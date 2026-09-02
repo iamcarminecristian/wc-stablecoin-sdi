@@ -16,8 +16,8 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 1. Spike 1 e 2 consolidati in `watcher/`: rilevamento, criterio di conferma, notifica idempotente e riscatto. Verificato end-to-end con `make e2e`
 2. Plugin completo: gateway, riferimento dell'ordine, endpoint REST, fatturazione via Action Scheduler (RF-06, RF-07), nota di credito (RF-10), scadenza (RF-04), checkout a blocchi (RNF-05), campi fiscali al checkout, strumentazione di misura
 3. Revisione del 2 settembre 2026 (v0.2.0), dopo l'audit della campagna v1: numeratore delle fatture atomico, aliquota per riga da `WC_Tax`, natura per le operazioni a IVA zero, cessionario estero, ritrasmissione dopo scarto, lock per ordine sulla notifica, validazione degli input, criterio di conferma e segreto nel pannello (`GET /config` per il watcher), heartbeat, informativa al checkout; watcher con stato persistito (eventi in attesa, riscatti, orfani), verifica di canonicita', riscatti ritentati, componente L1 nel costo
-4. Campagna v1 (31/08-01/09) conservata in `docs/dataset/` con i suoi difetti dichiarati (`docs/dataset/README.md`); campagna v2 dal 3 settembre con il codice corretto
-5. Restano aperti: RNF-04 verificato solo per argomento (`docs/rnf-04-minimizzazione.md`), RF-09 senza anello del riscatto nel registro di audit, nessun esercizio su rete principale
+4. Campagna v1 (31/08-01/09) conservata in `docs/dataset/` con i suoi difetti dichiarati (`docs/dataset/README.md`); campagna v2 il 2 settembre 2026 con il codice corretto (tre tranche da dieci lotti, scansione di sette criteri di conferma, serie permit e approve)
+5. Restano aperti: RNF-04 verificato solo per argomento (`docs/rnf-04-minimizzazione.md`), RF-11 (rimborso al cliente con lo stesso mezzo) dichiarato come limite, nessun esercizio su rete principale; Slither non rieseguito con solc 0.8.36 (`docs/analisi-sicurezza.md`)
 
 Lo spike 2 resta utile per interrogare il sandbox: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
 
