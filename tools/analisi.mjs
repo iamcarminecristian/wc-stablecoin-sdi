@@ -110,6 +110,8 @@ function riassumi(valori) {
     n: v.length,
     media,
     mediana: quantile(v, 0.5),
+    q1: quantile(v, 0.25),
+    q3: quantile(v, 0.75),
     p95: quantile(v, 0.95),
     min: v[0],
     max: v[v.length - 1],
@@ -320,16 +322,15 @@ if (SOLO_CONFERME !== null) {
 const flussoRisultato = {
   totale: stepTotale,
   dettaglioChain: { anvil: scartatiAnvil, altre: scartatiAltre, vuoto: scartatiVuoto },
+  // Le etichette sono quelle leggibili richieste per tab-flusso.tex: l'elenco
+  // delle campagne scelte non ci sta piu' dentro, resta solo nel JSON
+  // (flussoRisultato.campagne, valorizzato piu' sotto una volta calcolato).
   passi: [
     { nome: 'Righe totali', scartate: null, rimanenti: stepTotale },
-    { nome: 'chain_id = 84532', scartate: scartatiChainRighe.length, rimanenti: stepChain.length },
-    { nome: "anomalia_orologio != 1", scartate: scartatiAnomalia, rimanenti: stepAnomalia.length },
-    { nome: 'con criterio o conferme', scartate: scartatiCriterio, rimanenti: stepCriterio.length },
-    {
-      nome: CAMPAGNE_SCELTE ? `nelle campagne scelte (${CAMPAGNE_SCELTE.join(', ')})` : 'nessun filtro di campagna',
-      scartate: scartatiCampagna,
-      rimanenti: stepCampagna.length,
-    },
+    { nome: 'Rete di prova Base Sepolia (84532)', scartate: scartatiChainRighe.length, rimanenti: stepChain.length },
+    { nome: 'Orologi allineati', scartate: scartatiAnomalia, rimanenti: stepAnomalia.length },
+    { nome: 'Criterio di conferma registrato', scartate: scartatiCriterio, rimanenti: stepCriterio.length },
+    { nome: 'Campagne selezionate', scartate: scartatiCampagna, rimanenti: stepCampagna.length },
   ],
   utilizzabili: righe.length,
 };
@@ -354,6 +355,7 @@ if (FLUSSO_LATEX) {
 }
 
 const campagne = [...new Set(righe.map((r) => r.campagna || '(senza identificativo)'))];
+flussoRisultato.campagne = campagne;
 if (CAMPAGNE_SCELTE !== null && CAMPAGNE_SCELTE.length > 1) {
   console.log(`Campagne aggregate su richiesta: ${campagne.join(', ')}`);
 } else if (campagne.length > 1) {
@@ -399,8 +401,13 @@ for (const i of importi) {
     String(re?.n ?? 0).padStart(3), f(re?.mediana).padStart(6), f(re?.p95).padStart(6), f(re?.max).padStart(6)
   );
 }
-const compl = { c: riassumi(righe.map(latenzaConferma)), re: riassumi(righe.map(latenzaRegolam)) };
+const compl = {
+  c: riassumi(righe.map(latenzaConferma)),
+  ri: riassumi(righe.map(latenzaRiconcil)),
+  re: riassumi(righe.map(latenzaRegolam)),
+};
 console.log(`\ncomplessivo  conferma: n=${compl.c?.n} med ${f(compl.c?.mediana)} p95 ${f(compl.c?.p95)}`);
+console.log(`             riconcil.: n=${compl.ri?.n} med ${f(compl.ri?.mediana)} p95 ${f(compl.ri?.p95)}`);
 console.log(`             regolam.: n=${compl.re?.n} med ${f(compl.re?.mediana)} p95 ${f(compl.re?.p95)}`);
 
 // --- 6.1b scomposizione delle latenze --------------------------------------
@@ -456,6 +463,80 @@ const conRiscatto = Object.values(riscatti).reduce((t, x) => t + x, 0);
 console.log(`riscatti (redeem verso EUR): ${conRiscatto}/${righe.length} disposti — ${Object.entries(riscatti).map(([k, v]) => `${k} ${v}`).join(', ') || 'nessuno'}`);
 
 const affidabilitaRisultato = { esiti, tassoSuccesso, errori, riscatti };
+
+// --- 6.2b scansione del criterio di conferma (facoltativa, --scansione=) ---
+
+// --scansione=etichetta=campagna,...: confronta criteri di conferma diversi
+// sullo stesso dataset (1/3/6/12/24 conferme, safe, finalized). Il valore
+// speciale "principale" non ricalcola nulla: riusa `righe`, l'insieme gia'
+// selezionato da --campagna, cosi' i numeri restano identici a quelli delle
+// altre sezioni. Le altre voci filtrano `stepCriterio` (righe che superano
+// gia' i filtri globali: rete 84532, orologi allineati, criterio registrato)
+// per la campagna indicata.
+const SCANSIONE = arg('scansione', null);
+const SCANSIONE_VOCI = SCANSIONE
+  ? SCANSIONE.split(',').filter(Boolean).map((v) => {
+      const i = v.indexOf('=');
+      return { etichetta: v.slice(0, i), campagna: v.slice(i + 1) };
+    })
+  : [];
+
+// Il criterio non e' dato dall'etichetta della riga di comando (c1, safe,
+// ...) ma va ricavato dalle colonne del dataset, come richiesto: le righe di
+// una stessa campagna condividono sempre lo stesso criterio/conferme, quindi
+// basta la prima riga valida del gruppo.
+function derivaCriterioGruppo(gruppo) {
+  const rigaCriterio = gruppo.find((r) => r.criterio === 'safe' || r.criterio === 'finalized' || r.criterio === 'confirmations');
+  if (rigaCriterio) {
+    if (rigaCriterio.criterio === 'safe') return { criterio: 'safe', conferme: null };
+    if (rigaCriterio.criterio === 'finalized') return { criterio: 'finalized', conferme: null };
+    return { criterio: 'confirmations', conferme: num(rigaCriterio.conferme) };
+  }
+  const rigaConferme = gruppo.find((r) => r.conferme !== '' && r.conferme !== undefined);
+  return rigaConferme ? { criterio: 'confirmations', conferme: num(rigaConferme.conferme) } : { criterio: null, conferme: null };
+}
+function garanziaTesto(criterio) {
+  if (criterio === 'confirmations') return 'nessuna';
+  if (criterio === 'safe') return 'lotto pubblicato';
+  if (criterio === 'finalized') return 'finalità del consenso';
+  return '—';
+}
+// perLatex=true usa \code{...} per safe/finalized (macro di config/comandi.tex
+// nella tesi); a schermo e nel JSON restano i nomi nudi.
+function etichettaCriterio(criterio, conferme, perLatex) {
+  if (criterio === 'confirmations') return Number(conferme) === 1 ? '1 conferma' : `${conferme} conferme`;
+  if (criterio === 'safe') return perLatex ? '\\code{safe}' : 'safe';
+  if (criterio === 'finalized') return perLatex ? '\\code{finalized}' : 'finalized';
+  return '—';
+}
+
+const scansioneRisultati = [];
+if (SCANSIONE_VOCI.length) {
+  console.log('\n=== 6.2b Scansione del criterio di conferma ===');
+  console.log('criterio                        n   conf.med  conf.p95  prof.med  notif.med  regol.med  garanzia');
+  for (const voce of SCANSIONE_VOCI) {
+    const gruppo = voce.campagna === 'principale' ? righe : stepCriterio.filter((r) => r.campagna === voce.campagna);
+    const { criterio, conferme } = derivaCriterioGruppo(gruppo);
+    const conferma = riassumi(gruppo.map(latenzaConferma));
+    const profondita = riassumi(gruppo.map((r) => derivaLatenza(r, 'lat_profondita', 't1', 't2')));
+    const notifica = riassumi(gruppo.map((r) => derivaLatenza(r, 'lat_notifica', 't2', 't3')));
+    const regolamento = riassumi(gruppo.map(latenzaRegolam));
+    const garanzia = garanziaTesto(criterio);
+    scansioneRisultati.push({
+      etichetta: voce.etichetta, campagna: voce.campagna, criterio, conferme, n: gruppo.length,
+      conferma, profondita, notifica, regolamento, garanzia,
+    });
+    let etichettaTesto = etichettaCriterio(criterio, conferme, false);
+    if (voce.campagna === 'principale') etichettaTesto = `${etichettaTesto}, campagna principale`;
+    console.log(
+      etichettaTesto.padEnd(30),
+      String(gruppo.length).padStart(4),
+      f(conferma?.mediana).padStart(9), f(conferma?.p95).padStart(9),
+      f(profondita?.mediana).padStart(9), f(notifica?.mediana).padStart(10), f(regolamento?.mediana).padStart(10),
+      ' ', garanzia
+    );
+  }
+}
 
 // --- 6.3 costi ---------------------------------------------------------
 
@@ -761,7 +842,17 @@ if (GAS_FILES) {
       }
       const costoRiassunto = riassumi(costi);
       const esitiModalita = conteggiaOccorrenze(righePagamento, 'esito');
-      gasModalitaRisultati.push({ modalita, n: righePagamento.length, gasPay, gasApproveProprio, costoRiassunto, esiti: esitiModalita });
+      // Gas per acquisto = somma delle due mediane (pagamento + autorizzazione
+      // propria): per allowance e permit l'autorizzazione non e' nella riga di
+      // pagamento (gia' pagata a parte o inclusa nella firma), quindi la sua
+      // mediana e' vuota e la somma coincide col gas di pagamento, senza note.
+      // La componente L1 mediana segue la stessa logica: solo in "approve" la
+      // riga di pagamento porta anche una propria autorizzazione da sommare.
+      const l1PayMed = riassumi(righePagamento.map((r) => num(r.l1_fee_pay_wei)))?.mediana ?? 0;
+      const l1ApproveMed = modalita === 'approve' ? (riassumi(righePagamento.map((r) => num(r.l1_fee_approve_wei)))?.mediana ?? 0) : 0;
+      const gasAcquisto = (gasPay?.mediana ?? 0) + (gasApproveProprio?.mediana ?? 0);
+      const costoCentraleEur = inEuro(gasAcquisto, GAS_MED, ETH_MED) + inEuroDiretta(l1PayMed + l1ApproveMed, ETH_MED);
+      gasModalitaRisultati.push({ modalita, n: righePagamento.length, gasPay, gasApproveProprio, costoRiassunto, esiti: esitiModalita, gasAcquisto, costoCentraleEur });
       console.log(
         `${modalita}: n=${righePagamento.length}  gas_pay med ${f(gasPay?.mediana, 0)} [${f(gasPay?.min, 0)}-${f(gasPay?.max, 0)}]  gas_approve med ${f(gasApproveProprio?.mediana, 0)}  costo tot (wei) med ${f(costoRiassunto?.mediana, 0)}  esiti: ${Object.entries(esitiModalita).map(([k, v]) => `${k} ${v}`).join(', ') || 'nessuno'}`
       );
@@ -809,14 +900,33 @@ function testoLatexLatenze() {
   const righeTex = latenze
     .map((l) => `${fLatex(l.importo, 2)} & ${l.c?.n ?? 0} & ${fLatex(l.c?.mediana)} & ${fLatex(l.c?.p95)} & ${fLatex(l.ri?.mediana)} & ${fLatex(l.ri?.p95)} & ${fLatex(l.re?.mediana)} & ${fLatex(l.re?.p95)} \\\\`)
     .join('\n');
-  return `\\begin{tabular}{rrrrrrrr}\n\\toprule\nImporto & $n$ & \\multicolumn{2}{c}{Conferma} & \\multicolumn{2}{c}{Riconciliazione} & \\multicolumn{2}{c}{Regolamento} \\\\\n & & mediana & p95 & mediana & p95 & mediana & p95 \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
+  // Riga finale sull'intero insieme (tutti gli importi insieme), non una
+  // somma delle righe sopra: mediana e p95 non sono additive.
+  const rigaComplessiva = `Complessivo & ${compl.c?.n ?? 0} & ${fLatex(compl.c?.mediana)} & ${fLatex(compl.c?.p95)} & ${fLatex(compl.ri?.mediana)} & ${fLatex(compl.ri?.p95)} & ${fLatex(compl.re?.mediana)} & ${fLatex(compl.re?.p95)} \\\\`;
+  return `\\begin{tabular}{rrrrrrrr}\n\\toprule\nImporto & $n$ & \\multicolumn{2}{c}{Conferma} & \\multicolumn{2}{c}{Riconciliazione} & \\multicolumn{2}{c}{Regolamento} \\\\\n & & mediana & p95 & mediana & p95 & mediana & p95 \\\\\n\\midrule\n${righeTex}\n\\midrule\n${rigaComplessiva}\n\\bottomrule\n\\end{tabular}\n`;
 }
 
+// Solo per la tabella LaTeX: notazione matematica al posto dei nomi delle
+// colonne t* usati a schermo e nel JSON, che restano quelli originali (punto
+// 4 del task). "coda + inclusione (t1 - t0)" e' il ripiego del dataset v1
+// senza t_invio: non compare nel run di riferimento (v2) ma resta gestito.
+const ETICHETTE_LATEX_SCOMPOSIZIONE = {
+  'attesa invio (t_invio - t0)': 'attesa di invio ($t_{\\mathrm{inv}}-t_0$)',
+  'inclusione (t1 - t_invio)': 'inclusione ($t_1-t_{\\mathrm{inv}}$)',
+  'coda + inclusione (t1 - t0)': 'coda e inclusione ($t_1-t_0$)',
+  'profondita (t2 - t1)': 'profondità ($t_2-t_1$)',
+  'notifica (t3 - t2)': 'notifica ($t_3-t_2$)',
+  'riscatto (t5 - t4)': 'riscatto ($t_5-t_4$)',
+  'totale conferma (t2 - t0)': 'conferma ($t_2-t_0$)',
+  'totale riconciliazione (t3 - t0)': 'riconciliazione ($t_3-t_0$)',
+  'totale regolamento (t5 - t0)': 'regolamento ($t_5-t_0$)',
+};
 function testoLatexScomposizione() {
   const righeTex = scomposizioneRighe
     .map((r) => {
       const riass = riassumi(r.dati);
-      return `${escLatex(r.nome)} & ${riass?.n ?? 0} & ${fLatex(riass?.mediana)} & ${fLatex(riass?.p95)} & ${fLatex(riass?.min)} & ${fLatex(riass?.max)} \\\\`;
+      const etichetta = ETICHETTE_LATEX_SCOMPOSIZIONE[r.nome] ?? escLatex(r.nome);
+      return `${etichetta} & ${riass?.n ?? 0} & ${fLatex(riass?.mediana)} & ${fLatex(riass?.p95)} & ${fLatex(riass?.min)} & ${fLatex(riass?.max)} \\\\`;
     })
     .join('\n');
   return `\\begin{tabular}{lrrrrr}\n\\toprule\nComponente & $n$ & mediana & p95 & min & max \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
@@ -833,7 +943,7 @@ function testoLatexCostiEuro() {
   const righeTex = costi
     .map((c) => `${fLatex(c.importo, 2)} & ${fLatex(c.favorevole, 6)} & ${fLatex(c.centrale, 6)} & ${fLatex(c.sfavorevole, 6)} & ${fLatex(c.stripe)} & ${fLatex(c.paypal)} & ${c.paypalCarta === null ? '---' : fLatex(c.paypalCarta)} \\\\`)
     .join('\n');
-  return `\\begin{tabular}{rrrrrrr}\n\\toprule\nImporto & \\multicolumn{3}{c}{Costo di rete totale (L2+L1)} & Stripe & PayPal & PayPal carta \\\\\n & favorevole & centrale & sfavorevole & & & \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
+  return `\\begin{tabular}{rrrrrrr}\n\\toprule\nImporto & \\multicolumn{3}{c}{Costo di rete (cliente)} & \\multicolumn{3}{c}{Commissione (esercente)} \\\\\n\\cmidrule(lr){2-4} \\cmidrule(lr){5-7}\n & favorevole & centrale & sfavorevole & Stripe & PayPal & PayPal carte \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
 }
 
 function testoLatexAffidabilita() {
@@ -848,9 +958,9 @@ function testoLatexFiscale() {
 
 function testoLatexTest() {
   const righeTex = [];
-  if (testRisultati.kwImporti) righeTex.push(`KW latenza conferma fra importi & ${fLatex(testRisultati.kwImporti.H, 3)} & ${testRisultati.kwImporti.df} & ${fLatexP(testRisultati.kwImporti.p)} \\\\`);
-  if (testRisultati.kwCampagne) righeTex.push(`KW latenza conferma fra campagne & ${fLatex(testRisultati.kwCampagne.H, 3)} & ${testRisultati.kwCampagne.df} & ${fLatexP(testRisultati.kwCampagne.p)} \\\\`);
-  if (testRisultati.mwFasce) righeTex.push(`MW latenza conferma, importo $\\leq$100 vs $>$100 & U=${fLatex(testRisultati.mwFasce.U, 1)} & --- & ${fLatexP(testRisultati.mwFasce.p)} \\\\`);
+  if (testRisultati.kwImporti) righeTex.push(`Kruskal-Wallis latenza conferma fra importi & ${fLatex(testRisultati.kwImporti.H, 3)} & ${testRisultati.kwImporti.df} & ${fLatexP(testRisultati.kwImporti.p)} \\\\`);
+  if (testRisultati.kwCampagne) righeTex.push(`Kruskal-Wallis latenza conferma fra campagne & ${fLatex(testRisultati.kwCampagne.H, 3)} & ${testRisultati.kwCampagne.df} & ${fLatexP(testRisultati.kwCampagne.p)} \\\\`);
+  if (testRisultati.mwFasce) righeTex.push(`Mann-Whitney latenza conferma, importo $\\leq$100 vs $>$100 & U=${fLatex(testRisultati.mwFasce.U, 1)} & --- & ${fLatexP(testRisultati.mwFasce.p)} \\\\`);
   if (testRisultati.bootstrapConferma) righeTex.push(`IC 95\\% bootstrap mediana latenza conferma & ${fLatex(testRisultati.bootstrapConferma.mediana)} [${fLatex(testRisultati.bootstrapConferma.ic95Basso)}, ${fLatex(testRisultati.bootstrapConferma.ic95Alto)}] & --- & --- \\\\`);
   if (testRisultati.bootstrapCosto) righeTex.push(`IC 95\\% bootstrap mediana costo (EUR) & ${fLatex(testRisultati.bootstrapCosto.mediana, 6)} [${fLatex(testRisultati.bootstrapCosto.ic95Basso, 6)}, ${fLatex(testRisultati.bootstrapCosto.ic95Alto, 6)}] & --- & --- \\\\`);
   return `\\begin{tabular}{lrrr}\n\\toprule\nTest & Statistica & df & p \\\\\n\\midrule\n${righeTex.join('\n')}\n\\bottomrule\n\\end{tabular}\n`;
@@ -866,9 +976,21 @@ function testoLatexSoglia() {
 function testoLatexGasModalita() {
   if (!gasModalitaRisultati || !gasModalitaRisultati.length) return null;
   const righeTex = gasModalitaRisultati
-    .map((g) => `${escLatex(g.modalita)} & ${g.n} & ${fLatex(g.gasPay?.mediana, 0)} & ${fLatex(g.gasApproveProprio?.mediana, 0)} & ${fLatex(g.costoRiassunto?.mediana, 0)} \\\\`)
+    .map((g) => `${escLatex(g.modalita)} & ${g.n} & ${fLatex(g.gasPay?.mediana, 0)} & ${fLatex(g.gasApproveProprio?.mediana, 0)} & ${fLatex(g.gasAcquisto, 0)} & ${fLatex(g.costoCentraleEur, 6)} \\\\`)
     .join('\n');
-  return `\\begin{tabular}{lrrrr}\n\\toprule\nModalita & $n$ & gas\\_pay mediana & gas\\_approve mediana & costo totale mediana (wei) \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
+  return `\\begin{tabular}{lrrrrr}\n\\toprule\nModalità & $n$ & Gas pagamento (mediana) & Gas autorizzazione (mediana) & Gas per acquisto & Costo centrale (EUR) \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
+}
+
+function testoLatexScansione() {
+  if (!scansioneRisultati.length) return null;
+  const righeTex = scansioneRisultati
+    .map((s) => {
+      let etichetta = etichettaCriterio(s.criterio, s.conferme, true);
+      if (s.campagna === 'principale') etichetta = `${etichetta}, campagna principale`;
+      return `${etichetta} & ${s.n} & ${fLatex(s.conferma?.mediana)} & ${fLatex(s.conferma?.p95)} & ${fLatex(s.profondita?.mediana)} & ${fLatex(s.notifica?.mediana)} & ${fLatex(s.regolamento?.mediana)} & ${s.garanzia} \\\\`;
+    })
+    .join('\n');
+  return `\\begin{tabular}{lrrrrrrl}\n\\toprule\nCriterio & $n$ & \\multicolumn{2}{c}{Conferma} & Profondità & Notifica & Regolamento & Garanzia \\\\\n & & mediana & p95 & mediana & mediana & mediana & \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
 }
 
 // --- scrittura su file: --latex=<dir> e --json=<file> ----------------------
@@ -894,6 +1016,8 @@ if (LATEX_DIR) {
   ];
   const testoGas = testoLatexGasModalita();
   if (testoGas) scritti.push(scriviFileLatex(LATEX_DIR, 'tab-gas-modalita.tex', testoGas));
+  const testoScansione = testoLatexScansione();
+  if (testoScansione) scritti.push(scriviFileLatex(LATEX_DIR, 'tab-scansione.tex', testoScansione));
   console.log(`\nTabelle LaTeX scritte in ${LATEX_DIR}:`);
   for (const p of scritti) console.log(`  ${p}`);
 }
@@ -904,7 +1028,9 @@ if (JSON_OUT) {
     generatoIl: new Date().toISOString(),
     flusso: flussoRisultato,
     latenze,
+    latenzeComplessive: compl,
     scomposizione: scomposizioneRighe.map((r) => ({ nome: r.nome, riassunto: riassumi(r.dati) })),
+    scansione: scansioneRisultati,
     affidabilita: affidabilitaRisultato,
     costi,
     rapportoL1L2: riassuntoRapportoL1L2,
@@ -913,6 +1039,15 @@ if (JSON_OUT) {
     soglia: sogliaRisultati,
     fiscale: fiscaleRisultati,
     gasModalita: gasModalitaRisultati,
+    // Valori di provenienza per chi rilegge il JSON senza il codice sotto
+    // mano: le tariffe sono quelle gia' usate per la baseline (sezione 6.3),
+    // non ricostruite qui.
+    parametri: {
+      gas: { p05: GAS_P05, mediana: GAS_MED, p95: GAS_P95 },
+      eth: { p05: ETH_P05, mediana: ETH_MED, p95: ETH_P95 },
+      tariffe: { stripe, paypal, paypalCarte: paypalCarta },
+    },
+    campagne: CAMPAGNE_SCELTE,
   };
   writeFileSync(JSON_OUT, JSON.stringify(risultatoJson, null, 2), 'utf8');
   console.log(`\nJSON scritto in ${JSON_OUT}`);
