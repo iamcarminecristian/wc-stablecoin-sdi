@@ -171,6 +171,11 @@ class WCSDI_Misure {
 			'fattura_accettata' => self::fattura_accettata( $fattura ) ? '1' : '0',
 			'fattura_tentativi' => (string) $order->get_meta( '_wcsdi_fattura_tentativi' ),
 			'sdi_verifiche'     => (string) $order->get_meta( '_wcsdi_sdi_verifiche' ),
+			// Istante di trasmissione e distanza dall'effettuazione (t3): la
+			// fattura immediata va trasmessa entro dodici giorni (art. 21, c. 4,
+			// DPR 633/72), e una coda ferma consuma quel termine in silenzio.
+			'fattura_trasmessa_il' => (string) $order->get_meta( '_wcsdi_fattura_trasmessa_il' ),
+			'lat_fattura'       => self::latenza_fattura( $order, $g( 't3' ) ),
 			'imponibile'        => wc_format_decimal( (string) ( (float) $order->get_total() - (float) $order->get_total_tax() ), 2 ),
 			'imposta'           => wc_format_decimal( (string) $order->get_total_tax(), 2 ),
 			// Una latenza negativa non è un evento fisico: significa che
@@ -218,6 +223,22 @@ class WCSDI_Misure {
 	 * trasmissione non basta: sarebbe una misura di ciò che ha fatto il
 	 * plugin, non di ciò che ha fatto il destinatario.
 	 */
+	/**
+	 * Secondi fra l'effettuazione (t3) e la trasmissione della fattura, o
+	 * stringa vuota se uno dei due istanti manca.
+	 */
+	private static function latenza_fattura( WC_Order $order, $t3 ) {
+		$trasmessa = (string) $order->get_meta( '_wcsdi_fattura_trasmessa_il' );
+		if ( '' === $trasmessa || null === $t3 || '' === (string) $t3 ) {
+			return '';
+		}
+		$istante = strtotime( $trasmessa );
+		if ( false === $istante ) {
+			return '';
+		}
+		return (string) round( $istante - (float) $t3, 3 );
+	}
+
 	private static function fattura_accettata( $stato ) {
 		return in_array( $stato, self::MARKING_CONSEGNATA, true );
 	}

@@ -37,7 +37,7 @@ Latenze derivate: `latenza_conferma` (t2-t0), `latenza_riconcil` (t3-t0), `laten
 
 Esiti: `stato_ordine`, `esito`, `categoria_errore`, `stato_riscatto` (`processed`, `rejected`, `declined`, `failed`, o stato intermedio), `riscatto_motivo`.
 
-Fattura: `fattura_numero`, `fattura_uuid`, `fattura_stato` (`marking` del fornitore), `fattura_accettata`, `fattura_tentativi`, `sdi_verifiche`, `imponibile`, `imposta`.
+Fattura: `fattura_numero`, `fattura_uuid`, `fattura_stato` (`marking` del fornitore), `fattura_accettata`, `fattura_tentativi`, `sdi_verifiche`, `fattura_trasmessa_il` (istante di trasmissione), `lat_fattura` (secondi fra t3, che e' il momento di effettuazione, e la trasmissione: il termine di legge e' dodici giorni), `imponibile`, `imposta`.
 
 Qualita': `anomalia_orologio` (1 se un marcatore precede il precedente: succede sulla chain di sviluppo, i cui blocchi non hanno un orario coerente con il server).
 
