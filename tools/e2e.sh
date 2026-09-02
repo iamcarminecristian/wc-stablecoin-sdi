@@ -76,13 +76,24 @@ attendi_watcher() {
 # all'arresto del servizio di rilevamento (che puo' essere stato riavviato
 # nel frattempo, quindi il trap legge WATCHER al momento dell'uscita, non
 # al momento in cui e' stato scritto).
-CONFIG_ORIGINALE="$(wp option get woocommerce_wcsdi_eure_settings --format=json 2>/dev/null)" || CONFIG_ORIGINALE=''
+# L'uscita di wp-cli via docker porta i ritorni a capo di Windows: senza
+# toglierli il JSON non viene riaccettato in scrittura e il ripristino
+# fallirebbe in silenzio, lasciando il negozio configurato su anvil.
+CONFIG_ORIGINALE="$(wp option get woocommerce_wcsdi_eure_settings --format=json 2>/dev/null | tr -d '\r')" || CONFIG_ORIGINALE=''
 WATCHER=""
 pulisci() {
   kill "$WATCHER" 2>/dev/null || true
   if [ -n "$CONFIG_ORIGINALE" ]; then
-    wp option update woocommerce_wcsdi_eure_settings --format=json "$CONFIG_ORIGINALE" >/dev/null 2>&1 || true
+    if wp option update woocommerce_wcsdi_eure_settings --format=json "$CONFIG_ORIGINALE" >/dev/null 2>&1; then
+      echo "   configurazione del gateway ripristinata"
+    else
+      echo "   ATTENZIONE: configurazione del gateway NON ripristinata, reimpostarla a mano"
+    fi
   fi
+  # La compilazione di e2e-setup riscrive l'artefatto del contratto con una
+  # impronta di metadati diversa: l'artefatto tracciato e' quello del
+  # contratto pubblicato su Base Sepolia e non deve cambiare.
+  git checkout -- contracts/build/OrderForwarder.json 2>/dev/null || true
 }
 trap pulisci EXIT
 
