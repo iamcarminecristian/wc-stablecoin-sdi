@@ -1,5 +1,11 @@
 // Configurazione del servizio, letta dal .env unico alla root del monorepo.
 // Il path e' risolto rispetto a questo file, non alla cwd.
+//
+// Il criterio di conferma e la rete possono arrivare anche dal plugin, che li
+// espone su GET /config: e' l'esercente a configurarli nel pannello, e due
+// sorgenti di verita' che nessuno tiene allineate producono ordini che restano
+// in attesa per sempre. Le variabili d'ambiente, se presenti, hanno la
+// precedenza: servono al banco di prova, che varia il criterio per campagna.
 import { config } from 'dotenv';
 config({ path: new URL('../../.env', import.meta.url) });
 
@@ -22,7 +28,11 @@ export const CHAIN_ID = Number(process.env.CHAIN_ID ?? '0');
 // non ha bisogno di sapere in anticipo quali ordini attendere.
 export const FORWARDER = getAddress(richiesta('FORWARDER_ADDRESS'));
 
-// Criterio di finalita'. Contare le conferme e' il criterio giusto su una rete
+// Contratto del token: serve alle verifiche di avvio (indirizzo di incasso
+// non in lista nera presso il validatore dell'emittente). Facoltativo.
+export const TOKEN_ADDRESS = process.env.TOKEN_ADDRESS ? getAddress(process.env.TOKEN_ADDRESS) : null;
+
+// Criterio di conferma. Contare le conferme e' il criterio giusto su una rete
 // di primo livello, dove la profondita' approssima il costo di riscrivere la
 // storia. Su una rete di secondo livello non lo e': i blocchi che il sequencer
 // produce non derivano dai dati pubblicati sul primo livello e restano
@@ -39,20 +49,23 @@ export const FORWARDER = getAddress(richiesta('FORWARDER_ADDRESS'));
 //                  richiederebbe una violazione della finalita' del consenso
 //                  sottostante, con la relativa penalizzazione.
 //
-// Il valore predefinito e' 'finalized': e' l'unico che offre una garanzia
-// dimostrabile, e la conferma qui innesca due azioni irreversibili fuori dalla
-// catena, il riscatto verso l'IBAN e la trasmissione al SdI. Costa una ventina
-// di minuti su Base, meno di quattro su una rete a finalita' rapida.
-// Chi accetta di fidarsi del sequencer puo' passare a 'safe' o al conteggio
-// delle conferme, ma sceglie fiducia in un operatore, non una garanzia.
-export const FINALITY_MODE = process.env.FINALITY_MODE ?? 'finalized';
-if (!['confirmations', 'safe', 'finalized'].includes(FINALITY_MODE)) {
-  console.error(`FINALITY_MODE non riconosciuto: ${FINALITY_MODE}`);
+// Il valore predefinito, in assenza di configurazione dal plugin e da
+// ambiente, e' 'finalized': e' l'unico che offre una garanzia dimostrabile,
+// e la conferma qui innesca due azioni irreversibili fuori dalla catena, il
+// riscatto verso l'IBAN e la trasmissione al SdI.
+export const CRITERI = ['confirmations', 'safe', 'finalized'];
+export const FINALITY_MODE_ENV = process.env.FINALITY_MODE ?? null;
+if (FINALITY_MODE_ENV && !CRITERI.includes(FINALITY_MODE_ENV)) {
+  console.error(`FINALITY_MODE non riconosciuto: ${FINALITY_MODE_ENV}`);
   process.exit(1);
 }
+export const CONFIRMATIONS_ENV = process.env.CONFIRMATIONS ? BigInt(process.env.CONFIRMATIONS) : null;
 
-export const CONFIRMATIONS = BigInt(process.env.CONFIRMATIONS ?? '12');
-export const POLL_MS = Number(process.env.POLL_MS ?? '5000');
+// Intervallo di sondaggio. Con il conteggio delle conferme la profondita'
+// cresce a ogni blocco e vale la pena guardare spesso; con le etichette
+// l'attesa e' di minuti e un sondaggio fitto consuma solo la quota del
+// provider (tredicimila richieste al giorno a cinque secondi).
+export const POLL_MS_ENV = process.env.POLL_MS ? Number(process.env.POLL_MS) : null;
 export const DECIMALS = Number(process.env.TOKEN_DECIMALS ?? '18');
 
 // Ampiezza massima di una singola query sui log: i provider RPC pubblici
@@ -63,7 +76,8 @@ export const MAX_BLOCK_SPAN = BigInt(process.env.MAX_BLOCK_SPAN ?? '500');
 export const PLUGIN_URL = richiesta('WCSDI_PLUGIN_URL').replace(/\/+$/, '');
 export const PLUGIN_SECRET = richiesta('WCSDI_SHARED_SECRET');
 
-// Stato persistente: ultimo blocco elaborato ed eventi gia' notificati.
+// Stato persistente: ultimo blocco elaborato, eventi in attesa e notificati,
+// riscatti in corso, eventi orfani.
 export const STATE_FILE = process.env.WATCHER_STATE_FILE
   ?? new URL('../state.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
@@ -71,8 +85,8 @@ export const STATE_FILE = process.env.WATCHER_STATE_FILE
 // testa della catena: gli eventi anteriori non verrebbero mai visti.
 export const START_BLOCK = process.env.START_BLOCK ? BigInt(process.env.START_BLOCK) : null;
 
-// Rimborso automatico verso l'IBAN dell'esercente (RF-05). Disattivabile,
-// perche' la fatturazione non dipende dall'esito del rimborso.
+// Riscatto automatico verso l'IBAN dell'esercente (RF-05). Disattivabile,
+// perche' la fatturazione non dipende dall'esito del riscatto.
 export const REDEEM_ENABLED = (process.env.AUTO_REDEEM ?? 'true') !== 'false';
 export const MONERIUM_BASE_URL = process.env.MONERIUM_BASE_URL ?? 'https://api.monerium.dev';
 export const MONERIUM_CLIENT_ID = process.env.MONERIUM_CLIENT_ID ?? '';
@@ -81,7 +95,13 @@ export const MONERIUM_CHAIN = process.env.MONERIUM_CHAIN ?? '';
 export const MONERIUM_IBAN = process.env.MONERIUM_IBAN ?? '';
 export const MERCHANT_ADDRESS = process.env.MONERIUM_WALLET_ADDRESS ?? '';
 
-// Anagrafica del beneficiario del rimborso, che e' l'esercente stesso.
+// Ritentativi del riscatto: un guasto transitorio dell'emittente non deve
+// lasciare euro tokenizzati fermi sull'indirizzo di incasso senza che nessuno
+// ci riprovi. Oltre l'ultimo tentativo il caso passa all'esercente.
+export const RISCATTO_BACKOFF_MS = [60_000, 300_000, 900_000, 3_600_000, 10_800_000, 21_600_000, 21_600_000, 21_600_000];
+export const RISCATTO_POLL_MS = Number(process.env.RISCATTO_POLL_MS ?? '15000');
+
+// Anagrafica del beneficiario del riscatto, che e' l'esercente stesso.
 // L'emittente la esige: un ordine di riscatto senza counterpart.details viene
 // rifiutato con 400 «Details attribute is missing from JSON», e con i soli
 // nome e cognome mancanti con «field is required» su entrambi. Il paese e'
@@ -91,6 +111,6 @@ export const MERCHANT_LAST_NAME = process.env.MERCHANT_LAST_NAME ?? '';
 export const MERCHANT_COUNTRY = process.env.MERCHANT_COUNTRY ?? '';
 
 // Unica chiave privata presente nel sistema: quella dell'esercente sul proprio
-// indirizzo di incasso, necessaria a firmare gli ordini di rimborso. Vive qui
+// indirizzo di incasso, necessaria a firmare gli ordini di riscatto. Vive qui
 // e non nel plugin, per le ragioni discusse nel paragrafo 4.4 della tesi.
 export const MERCHANT_SIGNER_KEY = process.env.MERCHANT_SIGNER_PRIVATE_KEY ?? '';

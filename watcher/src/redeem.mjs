@@ -1,7 +1,13 @@
-// Rimborso alla pari verso l'IBAN dell'esercente (RF-05), consolidato dallo
+// Riscatto alla pari verso l'IBAN dell'esercente (RF-05), consolidato dallo
 // spike 2. E' l'unico punto del sistema che esercita la capacita' di firma
 // dell'esercente: vive qui, non nel plugin, per le ragioni discusse nel
 // paragrafo 4.4 della tesi.
+//
+// La firma per ordine e' un controllo dell'API dell'emittente. A livello di
+// contratto, le funzioni di distruzione e recupero dei saldi riservate ai
+// system account dell'emittente verificano la firma del messaggio di
+// collegamento dell'indirizzo, apposta una volta in onboarding: e' quella,
+// non questa, l'autorizzazione permanente che rende possibile il riscatto.
 import {
   MONERIUM_BASE_URL, MONERIUM_CLIENT_ID, MONERIUM_CLIENT_SECRET,
   MONERIUM_CHAIN, MONERIUM_IBAN, MERCHANT_ADDRESS, MERCHANT_SIGNER_KEY,
@@ -16,7 +22,18 @@ const ACCEPT_V2 = 'application/vnd.monerium.api-v2+json';
 // nel futuro; lo si sposta avanti per assorbire la latenza della chiamata.
 const ANTICIPO_MS = 2 * 60 * 1000;
 
+// Importo oltre il quale l'emittente richiede un documento giustificativo
+// allegato all'ordine (supportingDocumentId): il riscatto automatico non lo
+// produce e il caso va all'esercente.
+export const SOGLIA_DOCUMENTO_EUR = 15000;
+
 let tokenCache = { valore: null, scadenza: 0 };
+
+// Ultimo istante usato in un messaggio: due riscatti di pari importo maturati
+// nello stesso secondo produrrebbero lo stesso messaggio firmato e il secondo
+// verrebbe respinto come duplicato. Gli istanti sono resi strettamente
+// crescenti.
+let ultimoIstante = 0;
 
 export function configurazioneRimborsoCompleta() {
   return Boolean(
@@ -36,7 +53,14 @@ async function api(path, options = {}, token = null) {
     },
   });
   const corpo = await res.text();
-  if (!res.ok) throw new Error(`${options.method ?? 'GET'} ${path} -> ${res.status}: ${corpo.slice(0, 300)}`);
+  if (!res.ok) {
+    const err = new Error(`${options.method ?? 'GET'} ${path} -> ${res.status}: ${corpo.slice(0, 300)}`);
+    // I 5xx e il 429 sono transitori; un 4xx non migliora riprovando, salvo
+    // il 401, che segnala un token scaduto e va rinnovato.
+    err.transitorio = res.status === 429 || res.status >= 500 || res.status === 401;
+    if (res.status === 401) tokenCache = { valore: null, scadenza: 0 };
+    throw err;
+  }
   return corpo ? JSON.parse(corpo) : null;
 }
 
@@ -60,14 +84,12 @@ async function accessToken() {
 }
 
 // Formato imposto dall'API, da rispettare alla lettera:
-//   Send <VALUTA> <IMPORTO> to <IBAN> at <TIMESTAMP RFC3339 al minuto>
+//   Send <VALUTA> <IMPORTO> to <IBAN> at <TIMESTAMP RFC3339 con i secondi>
 function messaggioOrdine(importo, iban) {
-  const t = new Date(Date.now() + ANTICIPO_MS);
-  // I secondi servono al valore reale: omessi l'API rifiuta il formato,
-  // azzerati due rimborsi di pari importo nello stesso minuto producono lo
-  // stesso messaggio firmato e il secondo e' respinto come duplicato.
-  t.setMilliseconds(0);
-  const ts = t.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  let istante = Math.floor((Date.now() + ANTICIPO_MS) / 1000);
+  if (istante <= ultimoIstante) istante = ultimoIstante + 1;
+  ultimoIstante = istante;
+  const ts = new Date(istante * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
   return `Send EUR ${importo} to ${iban} at ${ts}`;
 }
 
@@ -86,9 +108,14 @@ async function firma(messaggio) {
   return account.signMessage({ message: messaggio });
 }
 
-/// Dispone il rimborso dell'importo incassato e restituisce l'ordine creato.
+/// Dispone il riscatto dell'importo incassato e restituisce l'ordine creato.
 /// Non attende lo stato finale, per non bloccare il ciclo di osservazione.
 export async function disponiRimborso(importo, orderRef = null) {
+  if (Number(importo) >= SOGLIA_DOCUMENTO_EUR) {
+    const err = new Error(`Importo ${importo} EUR: oltre ${SOGLIA_DOCUMENTO_EUR} l'emittente richiede un documento giustificativo, il riscatto va disposto manualmente`);
+    err.transitorio = false;
+    throw err;
+  }
   const token = await accessToken();
   const messaggio = messaggioOrdine(importo, MONERIUM_IBAN);
   const signature = await firma(messaggio);
@@ -104,7 +131,7 @@ export async function disponiRimborso(importo, orderRef = null) {
       chain: MONERIUM_CHAIN,
       message: messaggio,
       signature,
-      // Rende il rimborso riconducibile alla transazione senza accoppiarli
+      // Rende il riscatto riconducibile alla transazione senza accoppiarli
       // per importo e istante, che sarebbe ambiguo.
       ...(orderRef ? { memo: `wcsdi:${orderRef}` } : {}),
       counterpart: {
@@ -123,25 +150,35 @@ export async function statoRimborso(id) {
   return api(`/orders/${id}`, {}, await accessToken());
 }
 
-/// Stati oltre i quali il rimborso non evolve piu'.
-const STATI_FINALI = new Set(['processed', 'rejected', 'declined']);
+/// Stati oltre i quali il riscatto non evolve piu'.
+export const STATI_FINALI = new Set(['processed', 'rejected', 'declined']);
 
-/// Segue il rimborso fino a uno stato terminale e restituisce l'istante in cui
-/// e' stato lavorato, che e' il marcatore t5 del protocollo: gli euro sono
-/// usciti verso l'IBAN. L'istante e' quello dichiarato dall'emittente, non
-/// quello in cui il servizio se ne accorge.
-export async function attendiRimborso(id, tentativi = 20, attesaMs = 5000) {
-  for (let i = 0; i < tentativi; i++) {
-    const o = await statoRimborso(id);
-    if (STATI_FINALI.has(o.state)) {
-      const lavorato = o.meta?.processedAt ?? o.meta?.rejectedAt ?? null;
-      return {
-        stato: o.state,
-        t5: lavorato ? Date.parse(lavorato) / 1000 : Date.now() / 1000,
-        txHashes: o.meta?.txHashes ?? [],
-      };
-    }
-    await new Promise((r) => setTimeout(r, attesaMs));
-  }
-  return null;
+/// Interpreta la risposta dell'emittente su un ordine. Se terminale,
+/// restituisce lo stato, il motivo di un eventuale rifiuto e l'istante di
+/// lavorazione, che e' il marcatore t5 del protocollo: quello dichiarato
+/// dall'emittente, non quello in cui il servizio se ne accorge.
+export function esitoOrdine(o) {
+  if (!STATI_FINALI.has(o.state)) return null;
+  const lavorato = o.meta?.processedAt ?? o.meta?.rejectedAt ?? null;
+  return {
+    stato: o.state,
+    motivo: o.rejectedReason ?? o.meta?.rejectedReason ?? '',
+    t5: lavorato ? Date.parse(lavorato) / 1000 : Date.now() / 1000,
+    txHashes: o.meta?.txHashes ?? [],
+  };
+}
+
+/// Verifica di avvio: l'IBAN configurato deve risultare collegato
+/// all'indirizzo di incasso sulla rete in uso, altrimenti i riscatti verranno
+/// respinti uno per uno e il forwarder, immutabile, continuera' a convogliare
+/// pagamenti su un indirizzo da cui il riscatto non e' disponibile.
+export async function ibanCollegato() {
+  const dati = await api('/ibans', {}, await accessToken());
+  const elenco = Array.isArray(dati) ? dati : (dati?.ibans ?? dati?.data ?? []);
+  const norm = (s) => String(s ?? '').replace(/\s+/g, '').toUpperCase();
+  return elenco.some((i) =>
+    norm(i.iban) === norm(MONERIUM_IBAN)
+    && String(i.address ?? '').toLowerCase() === MERCHANT_ADDRESS.toLowerCase()
+    && (!i.chain || String(i.chain).toLowerCase() === MONERIUM_CHAIN.toLowerCase())
+  );
 }
