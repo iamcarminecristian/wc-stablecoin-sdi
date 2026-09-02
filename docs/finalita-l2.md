@@ -119,9 +119,19 @@ Il criterio adottato viaggia con ogni misura fino al dataset, accanto
 all'eventuale numero di conferme: senza, misure prese sotto garanzie diverse
 resterebbero indistinguibili.
 
-Il valore predefinito resta `confirmations`, per non cambiare il comportamento
-su una rete di primo livello dove quel criterio è corretto. Su una rete di
-secondo livello va impostato `finalized`.
+Il valore predefinito è `finalized`, dal 2 settembre 2026: è l'unico criterio
+che offre una garanzia dimostrabile, e la conferma innesca due azioni
+irreversibili fuori dalla catena. Il criterio si imposta nel pannello del
+gateway (campo «Criterio di conferma»), da cui il servizio lo legge all'avvio
+attraverso `GET /config`; la variabile d'ambiente `FINALITY_MODE`, se presente,
+ha la precedenza ed è il modo in cui le campagne lo variano. Su una rete di
+primo livello `confirmations` resta corretto e va scelto esplicitamente.
+
+Prima di notificare un pagamento confermato il servizio rilegge la ricevuta e
+confronta l'hash del blocco con quello osservato: un blocco sostituito dal
+sequencer fa decadere l'evento, o lo riposiziona se la transazione è stata
+inclusa altrove. Senza questo controllo il criterio sarebbe dichiarato e non
+applicato.
 
 Una precisazione sulla misura, che è costata una prima serie di dati da buttare.
 Con il conteggio delle conferme il marcatore t2 è l'ora del blocco che porta la
@@ -139,8 +149,9 @@ anziché di due.
 
 Ciò che conta per l'esercente è l'istante in cui il criterio risulta
 soddisfatto, perché è da lì che può agire: si adotta quello, con una
-quantizzazione pari all'intervallo di sondaggio, cinque secondi, trascurabile
-rispetto ai minuti in gioco.
+quantizzazione pari all'intervallo di sondaggio, che le campagne fissano a
+dieci secondi per i criteri a etichetta e il servizio in esercizio a trenta,
+trascurabile rispetto ai minuti in gioco e dichiarata accanto alla misura.
 
 ## Una scelta che resta legittima
 

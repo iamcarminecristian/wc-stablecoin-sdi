@@ -1,10 +1,15 @@
-# Ambiente di sviluppo completo: WordPress+WooCommerce, chain EVM locale,
-# watcher (profilo "full", si attiva dopo il consolidamento dello spike 1).
+# Ambiente di sviluppo e di misura: WordPress+WooCommerce, chain EVM locale,
+# runner della coda, watcher (profilo "full").
 # Comandi: make init | make up | make down | make nuke | make demo
+#
+# Le immagini sono fissate al digest con cui sono state condotte le misure del
+# Capitolo 6 (2 settembre 2026): WordPress 7.1, WooCommerce 11.0.1, PHP 8.2.33,
+# MariaDB 11.8.9, anvil 1.5.1. Un tag mobile come "wordpress:php8.2-apache"
+# non basta a dichiarare le versioni, perche' cambia sotto i piedi a ogni pull.
 
 services:
   db:
-    image: mariadb:11
+    image: mariadb:11@sha256:2439dcd7d14010ecd1ff7a4e1c5abe8e208c34fe35290744deeeaac3569043c3
     environment:
       MYSQL_DATABASE: wordpress
       MYSQL_USER: wordpress
@@ -18,7 +23,7 @@ services:
       retries: 30
 
   wordpress:
-    image: wordpress:php8.2-apache
+    image: wordpress:php8.2-apache@sha256:75c755113d8644a08519270d77e0c8bd14b7bea23910e3d165056870093869a2
     depends_on:
       db:
         condition: service_healthy
@@ -32,10 +37,16 @@ services:
     volumes:
       - wp_data:/var/www/html
       - ./plugin:/var/www/html/wp-content/plugins/wc-stablecoin-sdi
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs -o /dev/null http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   # wp-cli condivide filesystem e DB di wordpress; usato da setup.sh via "run".
   wpcli:
-    image: wordpress:cli-php8.2
+    image: wordpress:cli-php8.2@sha256:837d55d02196b5f4c92d236317c6d089ab1471348b31d1708888d444a0390979
     depends_on:
       db:
         condition: service_healthy
@@ -51,12 +62,13 @@ services:
     profiles: ["tools"]
 
   # La coda di Action Scheduler non si lavora da sola: il cron di WordPress
-  # parte in loopback a ogni visita, e un ambiente senza traffico non ne
-  # riceve. Senza un runner le azioni si accodano e restano pending in
-  # silenzio, fatture comprese: successo il 01/09/2026, 200 trasmissioni
-  # ferme in coda per undici ore senza alcun errore visibile.
+  # parte in loopback a ogni visita, e dentro il container la richiesta di
+  # loopback verso l'indirizzo pubblico del sito non arriva. Senza un runner le
+  # azioni si accodano e restano pending in silenzio, fatture comprese:
+  # successo il 01/09/2026, 200 trasmissioni ferme in coda per undici ore
+  # senza alcun errore visibile.
   cronrunner:
-    image: wordpress:cli-php8.2
+    image: wordpress:cli-php8.2@sha256:837d55d02196b5f4c92d236317c6d089ab1471348b31d1708888d444a0390979
     depends_on:
       db:
         condition: service_healthy
@@ -69,23 +81,35 @@ services:
       - wp_data:/var/www/html
       - ./plugin:/var/www/html/wp-content/plugins/wc-stablecoin-sdi
     entrypoint: ["sh", "-c", "while true; do wp action-scheduler run --force 2>&1; sleep 60; done"]
+    restart: unless-stopped
 
-  # Chain EVM locale (anvil): per spike 1 e demo di pagamento offline.
+  # Chain EVM locale (anvil): per la demo offline e la verifica end-to-end.
   anvil:
-    image: ghcr.io/foundry-rs/foundry:stable
+    image: ghcr.io/foundry-rs/foundry:stable@sha256:043752653d5be351c71709091b3db97c4421c907eb40ea294195e7f532aadf46
     entrypoint: ["anvil"]
     command: ["--host", "0.0.0.0", "--chain-id", "31337"]
     ports:
       - "8545:8545"
 
+  # Servizio di rilevamento. Legge il .env alla root come quando gira fuori
+  # dai container; il file di stato resta nel volume montato, cosi' un riavvio
+  # del container riprende gli eventi in attesa e i riscatti in corso.
+  # Dentro la rete di compose il plugin si raggiunge come "wordpress", non
+  # come localhost: sovrascrivere WCSDI_PLUGIN_URL di conseguenza.
   watcher:
     image: node:22-alpine
     working_dir: /app
     volumes:
       - ./watcher:/app
-    command: ["node", "src/index.mjs"]
+    env_file:
+      - .env
+    environment:
+      WCSDI_PLUGIN_URL: http://wordpress/?rest_route=/wcsdi/v1
+    command: ["sh", "-c", "npm install --silent && node src/index.mjs"]
     depends_on:
-      - anvil
+      wordpress:
+        condition: service_healthy
+    restart: unless-stopped
     profiles: ["full"]
 
 volumes:

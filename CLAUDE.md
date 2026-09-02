@@ -8,16 +8,16 @@ Plugin WooCommerce per pagamenti in stablecoin EUR-pegged (EURe) con conversione
 - `make up` / `make down` / `make nuke` — gestione ambiente
 - `make demo` — deploya MockEURe sulla chain locale, simula un pagamento e mina 12 blocchi (input per lo spike 1)
 - `make contracts` — compila il contratto di inoltro e ne esegue le verifiche
-- `make e2e` — verifica end-to-end: due ordini WooCommerce di pari importo, pagamento on-chain, transizione di stato, idempotenza, autenticazione
+- `make e2e` — verifica end-to-end su anvil: ordini di pari importo, pagamento on-chain, transizione di stato, idempotenza, autenticazione, validazione degli input, numeratore concorrente, notifiche parallele, riavvio del watcher con eventi in attesa, fatturazione e nota di credito se il sandbox e' configurato
+- Campagne (Cap. 6): `node tools/local-chain/campagna-lotti.mjs --ripetizioni=10 --campagna=<id> --criterio=confirmations:12` (avvia da se' il watcher); scansione dei criteri con `campagna-finalita.mjs`; misure con `node tools/analisi.mjs`
 - Spike: `cp .env.example .env` alla root (una volta sola), poi in `spikes/*/` `npm install && npm start`
 
 ## Stato e ordine di lavoro
-1. Spike 1 e 2 consolidati in `watcher/`: rilevamento, finalita', notifica idempotente e rimborso. Verificato end-to-end con `make e2e`
-2. Plugin: gateway, riferimento dell'ordine, endpoint REST con verifica dell'importo e transizione di stato (RF-02, RF-03, RF-04, RNF-03). Restano la fatturazione via Action Scheduler (RF-06, RF-07), la nota di credito (RF-10) e l'integrazione nei checkout blocks
-3. Fatturazione consolidata nel plugin: composizione del tracciato, trasmissione al fornitore e ciclo delle ricevute, orchestrati da Action Scheduler (RF-06, RF-07). Verificata contro il sandbox reale da `make e2e`
-4. Nota di credito (RF-10), scadenza della finestra (RF-04) e checkout a blocchi (RNF-05) completati e verificati
-5. Rimborso verificato end-to-end sul sandbox: da `pending` a `processed` in meno di due secondi
-6. Restano aperti: repository pubblico (RNF-01), verifica della minimizzazione dei dati (RNF-04) e l'anello del rimborso nel registro di audit (RF-09)
+1. Spike 1 e 2 consolidati in `watcher/`: rilevamento, criterio di conferma, notifica idempotente e riscatto. Verificato end-to-end con `make e2e`
+2. Plugin completo: gateway, riferimento dell'ordine, endpoint REST, fatturazione via Action Scheduler (RF-06, RF-07), nota di credito (RF-10), scadenza (RF-04), checkout a blocchi (RNF-05), campi fiscali al checkout, strumentazione di misura
+3. Revisione del 2 settembre 2026 (v0.2.0), dopo l'audit della campagna v1: numeratore delle fatture atomico, aliquota per riga da `WC_Tax`, natura per le operazioni a IVA zero, cessionario estero, ritrasmissione dopo scarto, lock per ordine sulla notifica, validazione degli input, criterio di conferma e segreto nel pannello (`GET /config` per il watcher), heartbeat, informativa al checkout; watcher con stato persistito (eventi in attesa, riscatti, orfani), verifica di canonicita', riscatti ritentati, componente L1 nel costo
+4. Campagna v1 (31/08-01/09) conservata in `docs/dataset/` con i suoi difetti dichiarati (`docs/dataset/README.md`); campagna v2 dal 3 settembre con il codice corretto
+5. Restano aperti: RNF-04 verificato solo per argomento (`docs/rnf-04-minimizzazione.md`), RF-09 senza anello del riscatto nel registro di audit, nessun esercizio su rete principale
 
 Lo spike 2 resta utile per interrogare il sandbox: fornisce il `TOKEN_ADDRESS` del contratto EURe sulla chain in uso.
 
@@ -53,7 +53,10 @@ Nota completa in `docs/sessioni/2026-08-31.md`.
 
 Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal contratto e' per definizione un incasso dell'esercente, e il riferimento viaggia dentro l'evento. Il watcher osserva, applica la finalita' e notifica; il plugin resta l'unica autorita' sullo stato dell'ordine e decide se l'importo basta.
 
-- `order_ref` = `hash_hmac('sha256', 'wcsdi-order:'.$id, wcsdi_watcher_secret)`. Deterministico, non invertibile da fuori, 32 byte. Il segreto e' lo stesso di `WCSDI_SHARED_SECRET` nel `.env`: se divergono, le notifiche vengono respinte con 401.
+- `order_ref` = HMAC-SHA256 di `wcsdi-order:<id>` con una chiave derivata dal segreto condiviso (`hash_hmac('sha256', 'wcsdi-order-ref-key', $secret, true)`): deterministico, non invertibile da fuori, 32 byte, e il segreto delle notifiche non e' mai usato direttamente come chiave. Il segreto si imposta nel pannello del gateway (campo che sincronizza l'opzione `wcsdi_watcher_secret` e poi si svuota) ed e' lo stesso di `WCSDI_SHARED_SECRET` nel `.env`: se divergono, le notifiche vengono respinte con 401.
+- Il watcher legge all'avvio `GET /wcsdi/v1/config` (rete, contratto, criterio di conferma, conferme) e si ferma se rete o contratto non coincidono con i suoi; le variabili d'ambiente `FINALITY_MODE`/`CONFIRMATIONS`, se presenti, hanno la precedenza. Invia `POST /heartbeat` ogni minuto: il pannello avvisa se manca da piu' di dieci minuti.
+- `POST /payment-confirmed` valida gli input (hash 0x + 64 esadecimali, importo decimale positivo, indirizzo), prende un lock MySQL per ordine (`GET_LOCK`) e rilegge l'ordine sotto lock; una `chain_id` diversa da quella attesa dall'ordine risponde 409 `wcsdi_chain_mismatch`. Il watcher considera definitivi solo 400, 409 e il 404 con codice `wcsdi_order_not_found`: gli altri errori si ritentano, e i definitivi finiscono fra gli orfani nel file di stato.
+- Il watcher persiste in `state.json` (scrittura con fsync e rename atomica) gli eventi in attesa con l'hash del blocco, i riscatti da disporre o in corso e gli orfani: un riavvio riprende da prima del piu' antico evento in attesa. Prima di notificare rilegge la ricevuta e confronta l'hash del blocco: evento decaduto se la transazione e' sparita, riposizionato se inclusa altrove.
 - La ricerca dell'ordine per riferimento **riverifica sempre** il metadato con `hash_equals`. `wc_get_orders` delega a data store diversi secondo che HPOS sia attivo, e un filtro non compreso viene ignorato in silenzio: senza riverifica un pagamento puo' essere attribuito all'ordine sbagliato.
 - La ricerca non filtra per stato, altrimenti una notifica ripetuta su un ordine gia' pagato non riconoscerebbe il duplicato e RNF-03 cadrebbe proprio nel caso che l'idempotenza esiste per coprire.
 - L'immagine di WordPress non riscrive `/wp-json/`: la REST API si raggiunge come `?rest_route=/wcsdi/v1/...`, forma gia' impostata nel `.env.example`.
@@ -65,7 +68,10 @@ Non esiste registrazione preventiva degli ordini: ogni `OrderPaid` emesso dal co
 - La composizione passa da `XMLWriter`, non da concatenazione: i valori arrivano dall'ordine e quindi dal cliente, e l'escaping non puo' essere lasciato a chi scrive il template. L'ordine degli elementi segue le sequenze del tracciato: un elemento fuori posto fa scartare la fattura.
 - `get_items()` senza argomenti restituisce le sole righe prodotto. Le commissioni vanno chieste esplicitamente con `array( 'line_item', 'fee' )`, altrimenti il documento nasce senza corpo e il fornitore lo rifiuta con un messaggio poco chiaro.
 - Gli argomenti delle azioni di Action Scheduler contengono il solo `order_id`. Contatori di tentativi e di verifiche vivono nei metadati dell'ordine, perche' `as_has_scheduled_action` riconosce un'azione gia' in coda solo se gli argomenti coincidono esattamente: con il contatore fra gli argomenti il controllo anti-duplicato non individuerebbe mai il lavoro gia' accodato.
-- Il numero progressivo si assegna una volta sola e resta nei metadati: un ritentativo non deve consumarne un altro e lasciare un buco nella serie.
+- Il numero progressivo si assegna una volta sola e resta nei metadati: un ritentativo non deve consumarne un altro e lasciare un buco nella serie. L'assegnazione e' atomica (`UPDATE ... SET option_value = LAST_INSERT_ID(option_value + 1)` sull'opzione `wcsdi_numeratore_<anno>`): la versione precedente leggeva e riscriveva l'opzione in due passi e con due runner concorrenti ha prodotto 30 numeri duplicati su 400 nella campagna v1, che il sandbox ha accettato. Non tornare a `get_option`/`update_option`.
+- L'anno della serie e' quello della data del documento (momento di effettuazione, t3), non quello della trasmissione; una fattura scartata si ritrasmette con `wp wcsdi ritrasmetti <id>` o dall'azione dell'ordine, con lo stesso numero.
+- L'aliquota di ogni riga viene da `WC_Tax` (rate dell'item), non dal rapporto imposta/imponibile arrotondato; una riga a IVA zero senza `Natura` configurata nel pannello e' un errore non transitorio, non un documento da trasmettere. Un cessionario senza codice fiscale ne' partita IVA (privato italiano) blocca la composizione prima dell'invio, perche' il SdI la scarterebbe con 00417; il cliente estero riceve `XXXXXXX` come codice destinatario, `IdPaese` proprio e CAP `00000`.
+- I dati fiscali del cessionario si raccolgono al checkout (`WCSDI_Checkout`: tipo cliente, codice fiscale con carattere di controllo, partita IVA, codice destinatario, PEC, richiesta di fattura) e finiscono nei metadati `_wcsdi_codice_fiscale`, `_wcsdi_piva`, `_wcsdi_codice_destinatario`, `_wcsdi_pec`, `_wcsdi_richiedi_fattura`, `_wcsdi_tipo_cliente`. Un privato che non richiede la fattura non la riceve (art. 22 DPR 633/72); lo script di campagna imposta la richiesta a `yes`.
 
 ## Nota di credito, scadenza, checkout a blocchi
 
@@ -93,7 +99,10 @@ Il protocollo KPI (documento su Drive) chiede che i marcatori t0-t5 siano regist
 - `wc_get_orders` restituisce anche i rimborsi, che non espongono `get_payment_method()`: interrogarli come ordini produce un errore fatale. Verificare sempre `instanceof WC_Order`.
 - **Filtrare sempre per `chain_id`.** Il campo `chain` riporta il nome configurato nel gateway, che puo' non coincidere con la rete realmente osservata: senza il filtro numerico le misure locali si mescolano a quelle di rete.
 - **Le latenze misurate sulla chain di sviluppo non sono significative.** Anvil genera i blocchi su richiesta e il loro orario non concorda con quello del server: si ottengono anche latenze negative. Il dataset le marca con `anomalia_orologio` e vanno scartate dall'analisi. Le misure buone si fanno su rete di prova con NTP attivo, come prescrive il protocollo.
-- La campagna si lancia con `tools/local-chain/campagna.mjs`. `--dry-run` mostra il piano senza toccare nulla.
+- La campagna si lancia con `tools/local-chain/campagna-lotti.mjs` (una tranche, un lotto per ripetizione, watcher avviato dallo script con `--criterio`) o con `campagna.mjs` per un singolo lotto. `--dry-run` mostra il piano senza toccare nulla. `--modalita=allowance|approve|permit` sceglie come il cliente autorizza il contratto; il gas delle autorizzazioni e l'istante di invio di ogni transazione finiscono in `docs/dataset/gas-<campagna>.csv`.
+- **Il marcatore `ti` (istante di invio) separa la coda dello script dalla latenza di inclusione.** Nella campagna v1 t1-t0 conteneva una mediana di dieci secondi di coda, perche' lo script paga in sequenza e t0 e' la creazione dell'ordine: senza `ti` la latenza di conferma non era scomponibile.
+- **Il costo di rete comprende la componente L1.** Su Base la ricevuta porta `l1Fee`, che viem non espone senza i formattatori della catena: il watcher legge la ricevuta grezza con `eth_getTransactionReceipt`. Nel dataset v1 la colonna e' stata integrata a posteriori da `tools/ricevute.mjs`.
+- Per i criteri a etichetta t2 e' l'istante di osservazione, quantizzato all'intervallo di sondaggio (10 s nelle campagne): non esiste un blocco che porti la transazione a `finalized`. Dettagli in `docs/finalita-l2.md`.
 
 ## Correlazione pagamento-ordine
 
