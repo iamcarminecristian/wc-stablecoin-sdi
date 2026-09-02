@@ -86,3 +86,9 @@ raccolti in due costanti anziché ripetuti in due file.
 - Agenzia delle Entrate, *Cosa fa il Sistema di Interscambio quando riceve una
   fattura* —
   <https://www.agenziaentrate.gov.it/portale/aree-tematiche/fatturazione-elettronica/guida-fatturazione-elettronica/come-predisporre-inviare-ricevere-fe/cosa-fa-sistema-interscambio-fe>
+
+## Osservazione del 2 settembre 2026, ore 18 UTC
+
+Esportazione `docs/dataset/campagna-2026-09-02.csv` dopo la terza tranche: 388 fatture della campagna v2, stati {'sent': 388}; verifiche delle ricevute eseguite per documento {'': 24, '1': 21, '2': 28, '3': 80, '4': 8, '5': 138, '6': 89}. Nessuna fattura ha cambiato stato da `sent`. Le prime trasmissioni della campagna v1 risalgono al 31 agosto: il termine di cinque giorni dichiarato dall'Agenzia scade il 5 settembre, e l'esportazione differita prevista per il 6 settembre (`docker compose run --rm -T wpcli wcsdi export --format=csv > docs/dataset/campagna-2026-09-06.csv`, poi `node tools/analisi.mjs` come in Appendice B della tesi) chiude l'osservazione. Il `cronrunner` resta acceso fino ad allora.
+
+Le richieste scritte a Openapi e Monerium non sono state inviate (decisione del 2 settembre): la documentazione pubblica del fornitore non dichiara se il sandbox inoltri al canale di sperimentazione dell'Agenzia, e la pagina ufficiale dell'Agenzia (<https://www.fatturapa.gov.it/it/sistemainterscambio/sperimentazione/>) dichiara che nel proprio ambiente di test i file sono trattati come in produzione ma privi di valore legale e non risultano trasmessi. La tesi lo riporta nei paragrafi 6.2 e 6.5.
