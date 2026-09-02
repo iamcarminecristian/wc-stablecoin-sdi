@@ -260,11 +260,22 @@ if [ "$FATTURAZIONE" = "1" ]; then
   # va drenata a mano, ed e' anche il modo piu' onesto di provarla.
   # Il runner via CLI non trova il gruppo in un'installazione senza traffico:
   # si esegue direttamente la coda dall'interno di WordPress.
-  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
-  sleep 2
-  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
-
-  UUID_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_uuid');" | tr -d '\r')
+  # Il container cronrunner puo' prendere in carico l'azione nello stesso
+  # istante: il runner lanciato qui la trova assegnata e non la esegue. Si
+  # attende l'esito, chiunque lo produca, fino a due minuti.
+  UUID_A=""
+  for _ in $(seq 1 24); do
+    wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+    UUID_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_uuid');" | tr -d '\r')
+    [ -n "$UUID_A" ] && break
+    sleep 5
+  done
+  # Anche l'ordine B deve avere avuto il tempo di essere fatturato.
+  for _ in $(seq 1 12); do
+    [ -n "$(wp eval "echo wc_get_order($ID_B)->get_meta('_wcsdi_fattura_numero');" | tr -d '\r')" ] && break
+    wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+    sleep 5
+  done
   NUM_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_numero');" | tr -d '\r')
   STATO_F=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_stato');" | tr -d '\r')
   ERR_A=$(wp eval "echo wc_get_order($ID_A)->get_meta('_wcsdi_fattura_errore');" | tr -d '\r')
@@ -491,7 +502,12 @@ ID_E=$(echo "$ORD_E" | awk '{print $1}'); REF_E=$(echo "$ORD_E" | awk '{print $2
 # piu' di quella del blocco che porta la transazione, e qui non deve
 # maturare prima del riavvio.
 node tools/local-chain/e2e-pay.mjs "$TOKEN" "$FORWARDER" "$CLIENTE_KEY" "$REF_E"
-sleep 3
+# Il servizio sonda ogni secondo e poi legge blocco e ricevuta: qualche
+# secondo di attesa e' fisiologico, si concede fino a venti secondi.
+for _ in $(seq 1 20); do
+  grep -q "\[VISTO\].*${REF_E:0:10}" /tmp/wcsdi-e2e-watcher.log && break
+  sleep 1
+done
 if grep -q "\[VISTO\].*${REF_E:0:10}" /tmp/wcsdi-e2e-watcher.log; then
   echo "  OK   il servizio ha visto il pagamento dell'ordine $ID_E prima del riavvio"
 else
