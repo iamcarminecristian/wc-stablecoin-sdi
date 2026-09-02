@@ -13,7 +13,13 @@
 // Uso:
 //   node tools/finalita-l2.mjs --minuti=20
 //   node tools/finalita-l2.mjs --rpc=https://mainnet.base.org --out=docs/dataset/finalita.csv
-import { writeFileSync } from 'node:fs';
+//   node tools/finalita-l2.mjs --minuti=2880 --grezzo=docs/dataset/finalita-campioni.csv
+//
+// Con --grezzo ogni campione viene scritto su file man mano (ogni dieci
+// letture), cosi' un'osservazione di giorni sopravvive a un'interruzione e
+// la distribuzione si puo' ricalcolare per ciclo di finalizzazione, non solo
+// dai quantili del riassunto.
+import { writeFileSync, appendFileSync, existsSync } from 'node:fs';
 
 const arg = (n, d) => {
   const v = process.argv.find((a) => a.startsWith(`--${n}=`));
@@ -24,6 +30,16 @@ const RPC = arg('rpc', 'https://sepolia.base.org');
 const MINUTI = Number(arg('minuti', '20'));
 const PASSO_MS = Number(arg('passo', '15000'));
 const OUT = arg('out', null);
+const GREZZO = arg('grezzo', null);
+if (GREZZO && !existsSync(GREZZO)) {
+  writeFileSync(GREZZO, 'ora,testa,safe_blocchi,safe_secondi,finalized_blocchi,finalized_secondi,rete\n');
+}
+let daScrivere = [];
+const scrivi = () => {
+  if (!GREZZO || daScrivere.length === 0) return;
+  appendFileSync(GREZZO, daScrivere.map((c) => [c.ora, c.testa, c.safeBlocchi, c.safeSecondi, c.finBlocchi, c.finSecondi, RPC].join(',')).join('\n') + '\n');
+  daScrivere = [];
+};
 
 let id = 0;
 async function rpc(method, params = []) {
@@ -63,11 +79,14 @@ while (Date.now() < scadenza) {
     ]);
     const t = (b) => Number(BigInt(b.timestamp));
     const n = (b) => Number(BigInt(b.number));
-    campioni.push({
-      ora: new Date(t(l) * 1000).toISOString(),
+    const campione = {
+      ora: new Date(t(l) * 1000).toISOString(), testa: n(l),
       safeBlocchi: n(l) - n(s), safeSecondi: t(l) - t(s),
       finBlocchi: n(l) - n(f), finSecondi: t(l) - t(f),
-    });
+    };
+    campioni.push(campione);
+    daScrivere.push(campione);
+    if (daScrivere.length >= 10) scrivi();
     process.stdout.write(`\r  ${campioni.length} campioni | safe ${t(l) - t(s)} s | finalized ${t(l) - t(f)} s   `);
   } catch (e) {
     process.stdout.write(`\r  errore: ${e.message}   `);
@@ -75,6 +94,7 @@ while (Date.now() < scadenza) {
   await new Promise((r) => setTimeout(r, PASSO_MS));
 }
 
+scrivi();
 const safe = riassumi(campioni.map((c) => c.safeSecondi));
 const fin = riassumi(campioni.map((c) => c.finSecondi));
 const f = (x) => x.toFixed(0).padStart(6);
