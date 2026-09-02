@@ -355,6 +355,16 @@ function mescola(v) {
   return a;
 }
 
+async function attendiAutorizzazione(valore, tentativi = 20) {
+  for (let i = 0; i < tentativi; i++) {
+    const concessa = await pub.readContract({
+      address: TOKEN, abi: erc20.abi, functionName: 'allowance', args: [cliente.address, FORWARDER],
+    });
+    if (concessa >= valore) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
 async function paga(o) {
   const valore = parseUnits(o.importo, DECIMALI);
   const misura = { tInvio: null };
@@ -367,6 +377,13 @@ async function paga(o) {
     await pub.waitForTransactionReceipt({ hash: hashA });
     const ra = await ricevutaGrezza(hashA);
     Object.assign(misura, { txApprove: hashA, gasApprove: ra.gas, prezzoApprove: ra.prezzo, l1Approve: ra.l1 });
+    // Dietro l'endpoint pubblico stanno piu' nodi, non tutti gia' allineati
+    // alla ricevuta appena letta: la simulazione del pagamento sul nodo in
+    // ritardo fallisce per autorizzazione insufficiente (ERC20InsufficientAllowance,
+    // 0xfb8f41b2), successo nella campagna del 2 settembre. Si attende che
+    // l'autorizzazione risulti visibile prima di pagare, come farebbe una
+    // pagina di pagamento reale.
+    await attendiAutorizzazione(valore);
   }
 
   let hash;
