@@ -63,9 +63,10 @@ Eseguite con il codice corretto (numeratore atomico, istante di invio, riscatti 
 | Identificativo | Righe | Criterio | Note |
 |---|---|---|---|
 | `2026-09-02-prova-v2` | 1 | 12 | Prova del flusso completo in modalita' `permit` (ordine 886): esclusa dalle tabelle, usata come esempio. |
-| `2026-09-02-v2-t1` | 85 | 12 | Tranche 1, 2 settembre 2026 dalle 10:20 alle 11:30 locali, 11 lotti (il primo interrotto dopo 8 ordini, poi 10 completi): tutti gli ordini confermati, riscattati e fatturati. |
+| `2026-09-02-v2-t1` | 85 | 12 | Tranche 1, 2 settembre 2026 dalle 08:20 alle 09:30 UTC, 11 lotti (il primo interrotto dopo 8 ordini, poi 10 completi): tutti gli ordini confermati, riscattati e fatturati. |
 | `2026-09-02-v2-t1-recupero` | 3 | 12 | Tre ordini del primo lotto (888, 889, 890) notificati in ritardo per il difetto della ricerca per riferimento, scoperto e corretto durante la tranche: pagati, riscattati e fatturati, ma con t3 posteriore di sette minuti; esclusi dalle latenze. |
 | `2026-09-02-v2-t2` | 80 | 12 | Tranche 2, 2 settembre 2026 dalle 10:52 alle 11:06 UTC, 10 lotti completi in tredici minuti: tutti gli ordini confermati, riscattati e fatturati, nessun numero di fattura duplicato. |
+| `2026-09-02-v2-t3` | 80 | 12 | Tranche 3, 2 settembre 2026 dalle 11:55 alle 12:11 UTC, 10 lotti completi in quindici minuti: tutti gli ordini confermati, riscattati e fatturati, nessun numero di fattura duplicato. |
 | `prova-lock-2026-09-02`, `prova-copia-2026-09-02` | 2 + 2 | | Ordini di prova con notifica fittizia (nessuna transazione reale): verifica del lock per ordine e della copia della fattura al cliente. Da escludere da ogni tabella. |
 | `2026-09-02-finalita-c1`, `-c3`, `-c6`, `-c12`, `-c24`, `-safe`, `-finalized` | 15 ciascuna | 1, 3, 6, 12, 24, safe, finalized | Scansione del criterio di conferma a numerosita' uguale (25, 100, 500 euro x 5), 2 settembre 2026 dalle 12:05; sondaggio a 5 s con le conferme e a 10 s con le etichette. |
 | `2026-09-02-v2-permit` | 15 | 12 | Stesso paniere ridotto in modalita' `permit` (payWithPermit con firma EIP-2612): una sola transazione per acquisto, gas nel file `gas-<campagna>.csv`. Tutti confermati e riscattati. |
