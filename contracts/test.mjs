@@ -4,7 +4,7 @@
 // Copre il caso nominale e le tre invarianti che rendono il contratto
 // utilizzabile in produzione: correlazione esatta, assenza di custodia,
 // rifiuto degli input degeneri.
-import { createWalletClient, createPublicClient, http, parseUnits, parseEventLogs, keccak256, toHex } from 'viem';
+import { createWalletClient, createPublicClient, http, parseUnits, parseEventLogs, keccak256, toHex, parseSignature } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { readFileSync } from 'node:fs';
 
@@ -103,9 +103,9 @@ check((await saldo(merchant.address)) - saldoMerchantIniziale === importo * 2n,
 
 // --- input degeneri ---------------------------------------------------------
 console.log('\nRifiuto degli input non validi');
-const deveFallire = async (args, descrizione) => {
+const deveFallire = async (args, descrizione, functionName = 'pay') => {
   try {
-    await pub.simulateContract({ address: fwdAddr, abi: forwarder.abi, functionName: 'pay', args, account: cliente });
+    await pub.simulateContract({ address: fwdAddr, abi: forwarder.abi, functionName, args, account: cliente });
     check(false, descrizione);
   } catch { check(true, descrizione); }
 };
@@ -113,6 +113,90 @@ await deveFallire([refA, 0n], 'importo nullo rifiutato');
 await deveFallire([`0x${'00'.repeat(32)}`, importo], 'riferimento ordine nullo rifiutato');
 await deveFallire([keccak256(toHex('wc-order-9999')), parseUnits('999999', 18)],
   'importo oltre il saldo del cliente rifiutato');
+
+// --- payWithPermit -----------------------------------------------------------
+// MockEURe implementa EIP-2612: qui si esercita davvero la funzione, mai
+// toccata finche' il token di prova non firmava permit.
+console.log('\npayWithPermit');
+
+// Il dominio si legge dal token (ERC-5267), come fa lo script di campagna:
+// non si hardcodano nome e versione nel test.
+const dominioGrezzo = await pub.readContract({ address: tokenAddr, abi: erc20.abi, functionName: 'eip712Domain' });
+const dominioPermit = {
+  name: dominioGrezzo[1],
+  version: dominioGrezzo[2],
+  chainId: Number(dominioGrezzo[3]),
+  verifyingContract: dominioGrezzo[4],
+};
+const tipiPermit = {
+  Permit: [
+    { name: 'owner', type: 'address' },
+    { name: 'spender', type: 'address' },
+    { name: 'value', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' },
+  ],
+};
+const scadenzaPermit = BigInt(Math.floor(Date.now() / 1000) + 3600);
+const nonceOf = (indirizzo) =>
+  pub.readContract({ address: tokenAddr, abi: erc20.abi, functionName: 'nonces', args: [indirizzo] });
+// Firma corrotta di proposito: r ed s nulli fanno restituire l'indirizzo
+// zero a ecrecover, che non coincide mai con il firmatario atteso.
+const firmaFinta = { v: 27, r: `0x${'00'.repeat(32)}`, s: `0x${'00'.repeat(32)}` };
+
+// (a) firma valida, senza approve preventiva: il permit deve bastare da solo.
+const importoPermitOk = parseUnits('5', 18);
+const refPermitOk = keccak256(toHex('wc-order-permit-ok'));
+const nonceIniziale = await nonceOf(cliente.address);
+
+const firmaValida = await cliente.signTypedData({
+  domain: dominioPermit, types: tipiPermit, primaryType: 'Permit',
+  message: { owner: cliente.address, spender: fwdAddr, value: importoPermitOk, nonce: nonceIniziale, deadline: scadenzaPermit },
+});
+const componentiFirma = parseSignature(firmaValida);
+const permitV = Number(componentiFirma.v ?? (27n + BigInt(componentiFirma.yParity ?? 0)));
+
+const rPermitOk = await attesa(await wC.writeContract({
+  address: fwdAddr, abi: forwarder.abi, functionName: 'payWithPermit',
+  args: [refPermitOk, importoPermitOk, scadenzaPermit, permitV, componentiFirma.r, componentiFirma.s],
+}));
+const evPermitOk = parseEventLogs({ abi: forwarder.abi, eventName: 'OrderPaid', logs: rPermitOk.logs })[0];
+check(rPermitOk.status === 'success', 'payWithPermit con firma valida e senza approve preventiva riesce');
+check(!!evPermitOk && evPermitOk.args.orderRef === refPermitOk && evPermitOk.args.amount === importoPermitOk,
+  "l'evento OrderPaid viene emesso con riferimento e importo corretti");
+check((await nonceOf(cliente.address)) === nonceIniziale + 1n,
+  'il nonce del cliente sale di uno dopo un permit riuscito');
+
+// (b) firma non valida ma con allowance gia' concessa: il permit fallisce in
+// silenzio (try/catch voluto) e il pagamento riesce comunque sull'allowance.
+const importoFallback = parseUnits('5', 18);
+const refFallback = keccak256(toHex('wc-order-permit-fallback'));
+const nonceAncoraFermo = await nonceOf(cliente.address);
+
+await attesa(await wC.writeContract({
+  address: tokenAddr, abi: erc20.abi, functionName: 'approve', args: [fwdAddr, importoFallback],
+}));
+const rFallback = await attesa(await wC.writeContract({
+  address: fwdAddr, abi: forwarder.abi, functionName: 'payWithPermit',
+  args: [refFallback, importoFallback, scadenzaPermit, firmaFinta.v, firmaFinta.r, firmaFinta.s],
+}));
+const evFallback = parseEventLogs({ abi: forwarder.abi, eventName: 'OrderPaid', logs: rFallback.logs })[0];
+check(rFallback.status === 'success',
+  "payWithPermit con firma non valida ma allowance gia' concessa riesce comunque");
+check(!!evFallback && evFallback.args.orderRef === refFallback,
+  "l'evento OrderPaid viene emesso anche quando il permit fallisce in silenzio");
+check((await nonceOf(cliente.address)) === nonceAncoraFermo,
+  'il nonce non sale: il permit fallito non produce effetti');
+
+// (c) firma non valida e nessuna allowance: qui il permit fallito non ha
+// nulla da cui ripiegare, e la transazione fallisce per intero.
+const importoSenzaAllowance = parseUnits('5', 18);
+const refSenzaAllowance = keccak256(toHex('wc-order-permit-fallisce'));
+await deveFallire(
+  [refSenzaAllowance, importoSenzaAllowance, scadenzaPermit, firmaFinta.v, firmaFinta.r, firmaFinta.s],
+  'payWithPermit con firma non valida e senza allowance fallisce',
+  'payWithPermit'
+);
 
 console.log(`\n${falliti === 0 ? 'Tutte le verifiche superate.' : `${falliti} verifiche fallite.`}`);
 process.exit(falliti === 0 ? 0 : 1);
