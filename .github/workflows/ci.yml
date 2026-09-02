@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  php-lint:
+    name: Lint PHP (plugin/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Imposta PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+
+      - name: php -l su tutti i file PHP di plugin/
+        run: |
+          set -e
+          find plugin -name '*.php' -print0 | xargs -0 -n1 php -l
+
+  node-check:
+    name: Sintassi Node (watcher/, tools/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Imposta Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: node --check su watcher/src, tools e tools/local-chain
+        run: |
+          set -e
+          for f in watcher/src/*.mjs tools/*.mjs tools/local-chain/*.mjs; do
+            node --check "$f"
+          done
+
+  contracts:
+    name: Foundry build & test (contracts/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verifica presenza di contracts/foundry.toml
+        id: foundry-check
+        run: |
+          if [ -f contracts/foundry.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Imposta Foundry
+        if: steps.foundry-check.outputs.present == 'true'
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: forge build
+        if: steps.foundry-check.outputs.present == 'true'
+        working-directory: contracts
+        run: forge build
+
+      - name: forge test
+        if: steps.foundry-check.outputs.present == 'true'
+        working-directory: contracts
+        run: forge test
+
+      - name: Nessun progetto Foundry
+        if: steps.foundry-check.outputs.present == 'false'
+        run: |
+          echo "contracts/foundry.toml assente: il progetto compila e testa con node (compile.mjs, test.mjs), non con Foundry. Job saltato."

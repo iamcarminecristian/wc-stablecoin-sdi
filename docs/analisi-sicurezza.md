@@ -9,6 +9,19 @@ solc-select install 0.8.24 && solc-select use 0.8.24
 cd contracts && slither src/OrderForwarder.sol
 ```
 
+**Nota sul compilatore (2 settembre 2026).** Il contratto pubblicato su Base
+Sepolia è stato compilato con solc 0.8.36 (vedi `CLAUDE.md`, ambiente di
+misura), non con la 0.8.24 usata per l'esecuzione sopra descritta. Una
+rianalisi con Slither sul bytecode 0.8.36 non è stata eseguita in questa
+sessione: né `slither` né `solc-select` risultano installati
+nell'ambiente disponibile (`pip` stesso non è presente), e installarli non
+rientrava nei tempi a disposizione. Non si dichiara quindi alcun esito per
+la 0.8.36: l'esito riportato sotto resta quello ottenuto con la 0.8.24 e va
+letto con questo scarto di versione. Le due segnalazioni a impatto basso
+discusse più sotto riguardano un pattern (`reentrancy-events`) indipendente
+dalla versione del compilatore, ma questo non è stato riverificato
+empiricamente sulla 0.8.36.
+
 ## Esito
 
 | Impatto | Segnalazioni |

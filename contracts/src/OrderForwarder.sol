@@ -73,8 +73,10 @@ contract OrderForwarder {
     /// Pagamento in una sola transazione: l'autorizzazione viaggia come firma
     /// EIP-2612, quindi al cliente basta una firma off-chain e una transazione.
     ///
-    /// @dev Il permit e' in try/catch di proposito. Una firma di permit e'
-    /// visibile in mempool e chiunque puo' anticiparla eseguendola per primo:
+    /// @dev Il permit e' in try/catch di proposito. Chi vede una firma di
+    /// permit prima della sua inclusione puo' anticiparla eseguendola per
+    /// primo (su una rete con sequencer unico e mempool privata quel "chi"
+    /// e' l'operatore stesso, ma il contratto non fa affidamento su questo):
     /// il permit fallirebbe per nonce gia' consumato e trascinerebbe con se'
     /// l'intero pagamento, pur essendo l'autorizzazione ormai concessa. Si
     /// ignora quindi l'esito del permit e si lascia decidere all'allowance
