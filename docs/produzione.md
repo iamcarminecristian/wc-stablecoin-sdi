@@ -166,7 +166,7 @@ contiene non è pubblicato e finalizzato sulla rete sottostante (dettagli in
   l'unico criterio con una garanzia dimostrabile, e qui la conferma innesca
   due azioni irreversibili fuori catena, il riscatto e la trasmissione
   della fattura. L'arretrato misurato rispetto alla testa della catena va
-  da circa 14 a circa 21 minuti su Base (mediana-p95 di `finalita-l2.md`).
+  di circa 18 minuti in mediana e fino a poco piu' di mezz'ora nel caso peggiore su Base, secondo il campionamento lungo (`docs/dataset/finalita-*-campioni.csv`, da rileggere alla chiusura del 4 settembre 2026).
 - Su Gnosis Chain o su una rete di primo livello: **`confirmations`** resta
   corretto e va scelto esplicitamente, con un numero di conferme
   proporzionato al tempo di blocco della rete.
