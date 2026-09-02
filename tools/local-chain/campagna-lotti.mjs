@@ -8,12 +8,16 @@
 // all'esercente a ogni pagamento, per cui i lotti si possono ripetere.
 //
 // Fra un lotto e l'altro si attende che l'esercente torni capiente: con il
-// rimborso attivo gli euro escono verso l'IBAN e l'emittente li riemette, ma
+// riscatto attivo gli euro escono verso l'IBAN e l'emittente li riemette, ma
 // non istantaneamente.
 //
+// Lo script avvia anche il servizio di rilevamento con il criterio indicato,
+// cosi' che una tranche sia riproducibile con un comando solo e il criterio
+// resti registrato sulle righe che ha prodotto.
+//
 // Uso:
-//   node tools/local-chain/campagna-lotti.mjs --ripetizioni=30
-//   node tools/local-chain/campagna-lotti.mjs --ripetizioni=2 --dry-run
+//   node tools/local-chain/campagna-lotti.mjs --ripetizioni=10 --campagna=2026-09-03-v2-t1
+//   node tools/local-chain/campagna-lotti.mjs --ripetizioni=2 --criterio=confirmations:12 --dry-run
 import { config } from 'dotenv';
 config({ path: new URL('../../.env', import.meta.url) });
 
@@ -21,6 +25,7 @@ import { createPublicClient, http, parseUnits, formatUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { criterio, avviaServizio, fermaServizio, radice } from './servizio.mjs';
 
 const arg = (nome, predefinito) => {
   const v = process.argv.find((a) => a.startsWith(`--${nome}=`));
@@ -32,6 +37,8 @@ const IMPORTI = arg('importi', '10,25,50,100,250,500,1000,2500').split(',').map(
 const RIPETIZIONI = Number(arg('ripetizioni', '30'));
 const CHAIN_ID = Number(arg('chain-id', process.env.CHAIN_ID ?? '84532'));
 const DECIMALI = Number(process.env.TOKEN_DECIMALS ?? '18');
+const MODALITA = arg('modalita', 'allowance');
+const CRITERIO = criterio(arg('criterio', 'confirmations:12'));
 
 // Quanto si e' disposti ad attendere che l'emittente riemetta gli euro usciti
 // verso l'IBAN, prima di dichiarare la campagna interrotta per fondi.
@@ -41,7 +48,6 @@ const ATTESA_FONDI_MS = Number(arg('attesa-fondi', String(15 * 60 * 1000)));
 const CAMPAGNA = arg('campagna', new Date().toISOString().replace(/[:.]/g, '-'));
 const SONDAGGIO_MS = 15000;
 
-const radice = new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const erc20 = JSON.parse(readFileSync(new URL('./erc20.json', import.meta.url)));
 
 const pub = createPublicClient({ transport: http(process.env.RPC_URL) });
@@ -49,8 +55,8 @@ const esercente = privateKeyToAccount(process.env.MERCHANT_SIGNER_PRIVATE_KEY);
 
 const perLotto = IMPORTI.reduce((t, i) => t + parseUnits(i, DECIMALI), 0n);
 
-console.log(`Campagna a lotti: ${RIPETIZIONI} lotti da ${IMPORTI.length} ordini`);
-console.log(`Paniere: ${IMPORTI.join(', ')} EUR — ${formatUnits(perLotto, DECIMALI)} EURe per lotto`);
+console.log(`Campagna a lotti: ${RIPETIZIONI} lotti da ${IMPORTI.length} ordini, criterio ${CRITERIO.etichetta}, modalita' ${MODALITA}`);
+console.log(`Paniere: ${IMPORTI.join(', ')} EUR, ${formatUnits(perLotto, DECIMALI)} EURe per lotto`);
 console.log(`Campagna: ${CAMPAGNA}`);
 console.log(`Totale: ${IMPORTI.length * RIPETIZIONI} ordini, ${formatUnits(perLotto * BigInt(RIPETIZIONI), DECIMALI)} EURe movimentati\n`);
 
@@ -106,6 +112,8 @@ function eseguiLotto() {
       '--ripetizioni=1',
       `--chain-id=${CHAIN_ID}`,
       `--campagna=${CAMPAGNA}`,
+      `--modalita=${MODALITA}`,
+      `--attesa=${CRITERIO.attesaMs}`,
     ], { cwd: radice });
 
     let coda = '';
@@ -118,6 +126,10 @@ function eseguiLotto() {
     p.on('close', (codice) => risolvi({ codice, coda }));
   });
 }
+
+const servizio = avviaServizio(CRITERIO, { silenzioso: flag('servizio-silenzioso') });
+await servizio.pronto;
+process.on('SIGINT', async () => { await fermaServizio(servizio); process.exit(130); });
 
 let completati = 0;
 for (let i = 1; i <= RIPETIZIONI; i++) {
@@ -137,6 +149,8 @@ for (let i = 1; i <= RIPETIZIONI; i++) {
   completati++;
 }
 
-console.log(`\nLotti completati: ${completati}/${RIPETIZIONI} — ${completati * IMPORTI.length} ordini.`);
+await fermaServizio(servizio);
+
+console.log(`\nLotti completati: ${completati}/${RIPETIZIONI}, ${completati * IMPORTI.length} ordini.`);
 console.log('Esportare il dataset con:');
 console.log('  docker compose run --rm -T wpcli wcsdi export --format=csv > docs/dataset/campagna.csv');

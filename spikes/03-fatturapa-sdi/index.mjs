@@ -19,8 +19,9 @@
 // NOTA: il passo (1) è implementato; il passo (2) è predisposto ma endpoint
 // e formato di invio vanno allineati alla documentazione openapi.it dopo
 // l'attivazione del servizio in sandbox.
-// ATTENZIONE (gate fiscale): la scelta di MP05 e la codifica dei riferimenti
-// on-chain in AltriDatiGestionali sono in attesa di validazione del relatore.
+// Nota sul gate fiscale: la scelta di MP05 e la codifica dei riferimenti
+// on-chain in AltriDatiGestionali sono state sciolte il 1 settembre 2026 e
+// consolidate nel plugin (WCSDI_Fattura): questo spike resta come traccia.
 // ============================================================================
 
 // Configurazione dal .env unico alla root del monorepo. Il path e' risolto

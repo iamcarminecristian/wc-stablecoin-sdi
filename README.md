@@ -48,10 +48,10 @@ Fatto: negozio su http://localhost:8080/wp-admin (admin / admin), gateway da abi
 Lo spike 2 va eseguito per primo: il suo output fornisce il `TOKEN_ADDRESS` che serve allo spike 1 su testnet.
 
 1. **01-onchain-detection**: su Base Sepolia con la configurazione del `.env` (`npm install && npm start`), oppure offline su anvil con l'override da shell descritto sopra, rilanciando `make demo` in un altro terminale. Uscita attesa: riga `[CONFERMATO]` con profondità 12.
-2. **02-monerium-redemption**: richiede credenziali sandbox monerium.dev. Auth, `GET /tokens`, `GET /profiles` e `GET /ibans` implementati: l'output stampa l'indirizzo del contratto EURe sulla chain configurata, da incollare in `TOKEN_ADDRESS`. Redeem da completare. Uscita: ordine di redemption a stato finale in sandbox.
-3. **03-fatturapa-sdi**: genera subito la fattura di esempio in `out/` (tracciato 1.9.1, mappatura §4.5: TD01, EUR, MP05, riferimenti on-chain in AltriDatiGestionali dentro DettaglioLinee); invio al SdI di test da completare dopo l'attivazione openapi.it. Uscita: ricevuta di consegna dal SdI di test.
+2. **02-monerium-redemption**: richiede credenziali sandbox monerium.dev. Auth, `GET /tokens`, `GET /profiles`, `GET /ibans` e ordine di riscatto firmato: l'output stampa l'indirizzo del contratto EURe sulla chain configurata, da incollare in `TOKEN_ADDRESS`. Uscita: ordine di riscatto a stato finale in sandbox.
+3. **03-fatturapa-sdi**: genera la fattura di esempio in `out/` (tracciato 1.9.1, mappatura del par. 4.5: TD01, EUR, MP05 qualificato in AltriDatiGestionali, hash in Causale) e la invia al sandbox Openapi. Uscita: identificativo della fattura e stato `sent`.
 
-**Gate fiscale**: le scelte MP05 / AltriDatiGestionali / momento di effettuazione sono in attesa di validazione del relatore; non consolidare lo spike 3 nel plugin prima dell'ok (vedi CLAUDE.md).
+Gli spike sono conservati come traccia del percorso: il codice consolidato vive in `watcher/` e `plugin/`. Le scelte fiscali (MP05, AltriDatiGestionali, momento di effettuazione) sono state sciolte il 1 settembre 2026 e sono raccolte nelle costanti in testa a `WCSDI_Fattura` (vedi CLAUDE.md).
 
 ## Verifica end-to-end
 
