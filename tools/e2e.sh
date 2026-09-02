@@ -237,6 +237,23 @@ CODICE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://localhost:8080/?
 verifica "notifica senza segreto respinta" "$CODICE" "401"
 
 echo
+echo "== 7b. verifico la ricerca dell'ordine oltre i cinque piu' recenti =="
+# Il data store classico ignora la meta_query di wc_get_orders: senza il
+# filtro del plugin la ricerca restituiva i cinque ordini piu' recenti e un
+# pagamento veniva trovato solo se il suo ordine era fra quelli. Si creano
+# sei ordini e si notifica il primo, che e' il sesto piu' recente.
+ORD_V=$(wp eval "$CREA" | tr -d '\r')
+ID_V=$(echo "$ORD_V" | awk '{print $1}'); REF_V=$(echo "$ORD_V" | awk '{print $2}')
+for _ in 1 2 3 4 5; do wp eval "$CREA" >/dev/null 2>&1; done
+TX_V="0x$(printf '55%.0s' {1..32})"
+RISP_V=$(curl -s -X POST "http://localhost:8080/?rest_route=/wcsdi/v1/payment-confirmed" \
+  -H 'Content-Type: application/json' -H "X-WCSDI-Secret: $SECRET" \
+  --data "{\"order_ref\":\"$REF_V\",\"tx_hash\":\"$TX_V\",\"log_index\":0,\"amount\":\"49.90\",\"chain_id\":31337,\"block_number\":1}")
+echo "$RISP_V" | grep -q '"accepted"' \
+  && echo "  OK   l'ordine $ID_V, sesto piu' recente, viene trovato dal riferimento" \
+  || { echo "  FAIL ordine $ID_V non trovato dal riferimento: $RISP_V"; falliti=$((falliti+1)); }
+
+echo
 if [ "$FATTURAZIONE" = "1" ]; then
   echo "== 8. verifico la fatturazione elettronica =="
   # Action Scheduler non gira da solo in un ambiente senza traffico: la coda
@@ -316,11 +333,16 @@ if [ "$FATTURAZIONE" = "1" ]; then
   echo "== 11. verifico la nota di credito =="
   # Un rimborso su un ordine gia' fatturato deve produrre la nota.
   wp eval "wc_create_refund( array( 'order_id' => $ID_A, 'amount' => 10.00, 'reason' => 'Reso parziale di prova' ) );" >/dev/null 2>&1 || true
-  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
-  sleep 1
-  wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
-
-  NOTA=$(wp eval "foreach ( wc_get_order($ID_A)->get_refunds() as \$r ) { if ( \$r->get_meta('_wcsdi_nota_uuid') ) { echo \$r->get_meta('_wcsdi_nota_uuid'); break; } }" | tr -d '\r')
+  # L'azione puo' essere presa in carico dal runner del container cronrunner
+  # nello stesso istante: il runner lanciato qui la trova gia' assegnata e
+  # non la esegue. Si attende l'esito, chiunque lo produca, fino a due minuti.
+  NOTA=""
+  for _ in $(seq 1 24); do
+    wp eval 'ActionScheduler::runner()->run();' >/dev/null 2>&1 || true
+    NOTA=$(wp eval "foreach ( wc_get_order($ID_A)->get_refunds() as \$r ) { if ( \$r->get_meta('_wcsdi_nota_uuid') ) { echo \$r->get_meta('_wcsdi_nota_uuid'); break; } }" | tr -d '\r')
+    [ -n "$NOTA" ] && break
+    sleep 5
+  done
   if [ -n "$NOTA" ]; then
     echo "  OK   nota di credito trasmessa ($NOTA)"
   else

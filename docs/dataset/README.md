@@ -56,6 +56,14 @@ Qualita': `anomalia_orologio` (1 se un marcatore precede il precedente: succede 
 
 Difetti noti della campagna v1, riportati nella tesi come risultati e non corretti a posteriori: il numeratore delle fatture non era atomico e due runner concorrenti hanno prodotto numeri duplicati (30 su 400 nella campagna principale), che il sandbox del fornitore ha accettato; la latenza t1-t0 include la coda dello script, che paga gli ordini in sequenza (mediana circa 10 secondi), non separabile perche' l'istante di invio non era registrato; i riscatti di quattro campagne brevi sono incompleti (14/15, 14/15, 13/15, 14/15) per un messaggio di riscatto duplicato nello stesso secondo e per l'arresto del servizio dopo 30 secondi.
 
-## Campagne v2 (dal 3 settembre 2026)
+## Campagne v2 (dal 2 settembre 2026)
 
-Eseguite con il codice corretto (numeratore atomico, istante di invio, riscatti persistiti e ritentati, componente L1 nel costo). Identificativi e composizione verranno aggiunti qui a ogni tranche.
+Eseguite con il codice corretto (numeratore atomico, istante di invio, riscatti persistiti e ritentati, componente L1 nel costo, ricerca dell'ordine per riferimento corretta). Comando: `node tools/local-chain/campagna-lotti.mjs --ripetizioni=10 --criterio=confirmations:12 --modalita=allowance --campagna=<id>`.
+
+| Identificativo | Righe | Criterio | Note |
+|---|---|---|---|
+| `2026-09-02-prova-v2` | 1 | 12 | Prova del flusso completo in modalita' `permit` (ordine 886): esclusa dalle tabelle, usata come esempio. |
+| `2026-09-02-v2-t1` | 85 | 12 | Tranche 1, 2 settembre 2026 dalle 10:20 alle 11:30 locali, 11 lotti (il primo interrotto dopo 8 ordini, poi 10 completi): tutti gli ordini confermati, riscattati e fatturati. |
+| `2026-09-02-v2-t1-recupero` | 3 | 12 | Tre ordini del primo lotto (888, 889, 890) notificati in ritardo per il difetto della ricerca per riferimento, scoperto e corretto durante la tranche: pagati, riscattati e fatturati, ma con t3 posteriore di sette minuti; esclusi dalle latenze. |
+
+Difetto scoperto durante la tranche 1: `wc_get_orders` ignora la `meta_query` sul data store classico, e la ricerca dell'ordine per riferimento trovava l'ordine solo se era fra i cinque piu' recenti. Nella campagna v1 lo stesso difetto e' la causa probabile degli ordini pagati e mai confermati: va verificato nel file v1 e riportato come errore del plugin, non della rete.

@@ -1,0 +1,2 @@
+campagna,order_id,order_ref,modalita,t_invio,tx_approve,gas_approve,prezzo_approve_wei,l1_fee_approve_wei,tx_pay,gas_pay,prezzo_pay_wei,l1_fee_pay_wei,esito
+2026-09-02-prova-v2,886,0xcaad469fe8caef577c58eeba1e4de8717dee88c5b0f5443a864baf288fa38af5,permit,1788336939.653,,,,,0x9d3efa8f2477ef79b8657eb0d2a604336ce0cce44e00e12f3765fedc4eb638e1,93960,6000000,5686426216,ok
