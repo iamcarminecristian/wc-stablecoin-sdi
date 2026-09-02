@@ -146,7 +146,7 @@ Punti da rispettare:
   precedente noto.
 - **Provider RPC dedicato, con quota adeguata al criterio scelto**: con il
   conteggio delle conferme il sondaggio è ogni 5 secondi (predefinito),
-  circa tredicimila richieste al giorno; con le etichette `safe`/`finalized`
+  circa diciassettemila richieste al giorno (86 400 secondi diviso 5); con le etichette `safe`/`finalized`
   l'intervallo predefinito sale a 30 secondi. Un provider pubblico
   condiviso può bastare in sviluppo, non in esercizio continuo.
 - **Un secondo provider come piano di riserva**: il servizio non lo gestisce
