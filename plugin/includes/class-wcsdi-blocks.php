@@ -51,8 +51,26 @@ final class WCSDI_Blocks extends AbstractPaymentMethodType {
 		return array(
 			'title'       => isset( $this->settings['title'] ) ? $this->settings['title'] : __( 'Paga in EURe', 'wc-stablecoin-sdi' ),
 			'description' => isset( $this->settings['description'] ) ? $this->settings['description'] : '',
+			// Informativa precontrattuale (art. 49 Cod. cons.): il cliente deve
+			// sapere prima dell'ordine che il costo di rete e' a suo carico, che
+			// il pagamento non e' revocabile da lui e come viene trattato
+			// l'indirizzo del pagatore.
+			'informativa' => $this->informativa(),
 			'supports'    => $this->get_supported_features(),
 		);
+	}
+
+	/**
+	 * Testo dell'informativa. Si legge dal gateway e non dall'opzione grezza,
+	 * perche' e' il gateway a conoscere il testo predefinito quando
+	 * l'esercente non ne ha scritto uno proprio.
+	 */
+	private function informativa() {
+		$gateways = WC()->payment_gateways()->payment_gateways();
+		if ( isset( $gateways[ $this->name ] ) ) {
+			return (string) $gateways[ $this->name ]->get_option( 'informativa' );
+		}
+		return isset( $this->settings['informativa'] ) ? $this->settings['informativa'] : '';
 	}
 
 	public function get_supported_features() {

@@ -28,7 +28,18 @@
 	var titolo = decodifica( settings.title || 'Paga in EURe' );
 
 	function Descrizione() {
-		return createElement( 'p', null, decodifica( settings.description || '' ) );
+		var figli = [ createElement( 'p', { key: 'd' }, decodifica( settings.description || '' ) ) ];
+		// L'informativa precontrattuale si mostra insieme alla descrizione:
+		// e' il momento in cui il cliente sceglie il mezzo di pagamento, e
+		// cio' che deve sapere va detto prima dell'ordine, non dopo.
+		if ( settings.informativa ) {
+			figli.push( createElement(
+				'p',
+				{ key: 'i', className: 'wcsdi-informativa', style: { fontSize: '0.9em' } },
+				decodifica( settings.informativa )
+			) );
+		}
+		return createElement( 'div', null, figli );
 	}
 
 	function Etichetta( props ) {

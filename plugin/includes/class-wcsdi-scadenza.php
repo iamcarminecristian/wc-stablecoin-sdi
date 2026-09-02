@@ -15,6 +15,22 @@ class WCSDI_Scadenza {
 	const AZIONE = 'wcsdi_scadenza_pagamento';
 	const GRUPPO = 'wc-stablecoin-sdi';
 
+	/**
+	 * Margine oltre la finestra, per criterio di conferma, in secondi.
+	 *
+	 * Un pagamento partito all'ultimo minuto deve avere il tempo di
+	 * soddisfare il criterio, altrimenti si chiuderebbe un ordine di fatto
+	 * pagato. Con il conteggio delle conferme bastano pochi minuti; con
+	 * l'etichetta «finalized» l'attesa misurata su Base arriva a ventuno
+	 * minuti (Capitolo 6, tab. dell'arretrato delle etichette), e il margine
+	 * deve superarla.
+	 */
+	const MARGINE = array(
+		'confirmations' => 600,
+		'safe'          => 900,
+		'finalized'     => 1800,
+	);
+
 	public static function init() {
 		add_action( self::AZIONE, array( __CLASS__, 'verifica' ), 10, 1 );
 	}
@@ -37,10 +53,10 @@ class WCSDI_Scadenza {
 			return;
 		}
 
-		// Un margine dopo la scadenza dichiarata: un pagamento partito
-		// all'ultimo minuto deve avere il tempo di maturare le conferme
-		// richieste, altrimenti si chiuderebbe un ordine di fatto pagato.
-		$margine = (int) apply_filters( 'wcsdi_margine_scadenza', 10 * MINUTE_IN_SECONDS, $order );
+		$opzioni  = (array) get_option( 'woocommerce_wcsdi_eure_settings', array() );
+		$criterio = isset( $opzioni['finality_mode'] ) ? (string) $opzioni['finality_mode'] : 'finalized';
+		$base     = isset( self::MARGINE[ $criterio ] ) ? self::MARGINE[ $criterio ] : self::MARGINE['finalized'];
+		$margine  = (int) apply_filters( 'wcsdi_margine_scadenza', $base, $order );
 
 		as_schedule_single_action( $scadenza + $margine, self::AZIONE, $args, self::GRUPPO );
 	}
@@ -68,11 +84,11 @@ class WCSDI_Scadenza {
 		if ( $incassato > 0 ) {
 			// Ha pagato, ma non abbastanza. L'ordine si chiude comunque,
 			// perché il riferimento non è più valido, ma la somma ricevuta
-			// resta evidenziata: va restituita, non trattenuta in silenzio.
-			// L'indirizzo di provenienza compare qui e in nessun altro punto:
-			// e' l'unica informazione con cui l'esercente puo' restituire la
-			// somma, ed e' la ragione per cui viene conservato (RNF-04). Senza,
-			// la nota chiederebbe di restituire un importo senza dire a chi.
+			// resta evidenziata: è un pagamento non dovuto, che va restituito
+			// (art. 2033 c.c.), non trattenuto in silenzio.
+			// L'indirizzo di provenienza compare qui e nella nota di eccedenza:
+			// è l'unica informazione con cui l'esercente può restituire la
+			// somma, ed è la ragione per cui viene conservato (RNF-04).
 			$mittente = (string) $order->get_meta( '_wcsdi_payer' );
 
 			$order->update_status( 'failed', sprintf(
