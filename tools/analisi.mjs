@@ -963,7 +963,7 @@ function testoLatexTest() {
   if (testRisultati.mwFasce) righeTex.push(`Mann-Whitney latenza conferma, importo $\\leq$100 vs $>$100 & U=${fLatex(testRisultati.mwFasce.U, 1)} & --- & ${fLatexP(testRisultati.mwFasce.p)} \\\\`);
   if (testRisultati.bootstrapConferma) righeTex.push(`IC 95\\% bootstrap mediana latenza conferma & ${fLatex(testRisultati.bootstrapConferma.mediana)} [${fLatex(testRisultati.bootstrapConferma.ic95Basso)}, ${fLatex(testRisultati.bootstrapConferma.ic95Alto)}] & --- & --- \\\\`);
   if (testRisultati.bootstrapCosto) righeTex.push(`IC 95\\% bootstrap mediana costo (EUR) & ${fLatex(testRisultati.bootstrapCosto.mediana, 6)} [${fLatex(testRisultati.bootstrapCosto.ic95Basso, 6)}, ${fLatex(testRisultati.bootstrapCosto.ic95Alto, 6)}] & --- & --- \\\\`);
-  return `\\begin{tabular}{lrrr}\n\\toprule\nTest & Statistica & df & p \\\\\n\\midrule\n${righeTex.join('\n')}\n\\bottomrule\n\\end{tabular}\n`;
+  return `% richiede tabularx e il tipo di colonna Y definito nel documento\n\\begin{tabularx}{\\linewidth}{Yrrr}\n\\toprule\nTest & Statistica & df & p \\\\\n\\midrule\n${righeTex.join('\n')}\n\\bottomrule\n\\end{tabularx}\n`;
 }
 
 function testoLatexSoglia() {
@@ -978,7 +978,7 @@ function testoLatexGasModalita() {
   const righeTex = gasModalitaRisultati
     .map((g) => `${escLatex(g.modalita)} & ${g.n} & ${fLatex(g.gasPay?.mediana, 0)} & ${fLatex(g.gasApproveProprio?.mediana, 0)} & ${fLatex(g.gasAcquisto, 0)} & ${fLatex(g.costoCentraleEur, 6)} \\\\`)
     .join('\n');
-  return `\\begin{tabular}{lrrrrr}\n\\toprule\nModalità & $n$ & Gas pagamento (mediana) & Gas autorizzazione (mediana) & Gas per acquisto & Costo centrale (EUR) \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
+  return `\\begin{tabular}{lrrrrr}\n\\toprule\nModalità & $n$ & \\multicolumn{2}{c}{Gas (mediana)} & Gas per & Costo centrale \\\\\n\\cmidrule(lr){3-4}\n & & pagamento & autorizzazione & acquisto & (EUR) \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
 }
 
 function testoLatexScansione() {
@@ -987,10 +987,12 @@ function testoLatexScansione() {
     .map((s) => {
       let etichetta = etichettaCriterio(s.criterio, s.conferme, true);
       if (s.campagna === 'principale') etichetta = `${etichetta}, campagna principale`;
-      return `${etichetta} & ${s.n} & ${fLatex(s.conferma?.mediana)} & ${fLatex(s.conferma?.p95)} & ${fLatex(s.profondita?.mediana)} & ${fLatex(s.notifica?.mediana)} & ${fLatex(s.regolamento?.mediana)} & ${s.garanzia} \\\\`;
+      return `${etichetta} & ${s.n} & ${fLatex(s.conferma?.mediana)} & ${fLatex(s.conferma?.p95)} & ${fLatex(s.profondita?.mediana)} & ${fLatex(s.regolamento?.mediana)} & ${s.garanzia} \\\\`;
     })
     .join('\n');
-  return `\\begin{tabular}{lrrrrrrl}\n\\toprule\nCriterio & $n$ & \\multicolumn{2}{c}{Conferma} & Profondità & Notifica & Regolamento & Garanzia \\\\\n & & mediana & p95 & mediana & mediana & mediana & \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabular}\n`;
+  // Colonne Y (tabularx a bandiera) definite nel documento che include la
+  // tabella: la mediana della notifica resta nel JSON, non nella tabella.
+  return `% richiede tabularx e il tipo di colonna Y definito nel documento\n\\begin{tabularx}{\\linewidth}{YrrrrrY}\n\\toprule\nCriterio & $n$ & \\multicolumn{2}{c}{Conferma} & Profondità & Regolam. & Garanzia \\\\\n\\cmidrule(lr){3-4}\n & & mediana & p95 & mediana & mediana & \\\\\n\\midrule\n${righeTex}\n\\bottomrule\n\\end{tabularx}\n`;
 }
 
 // --- scrittura su file: --latex=<dir> e --json=<file> ----------------------
