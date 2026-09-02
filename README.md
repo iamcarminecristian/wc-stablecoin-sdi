@@ -320,3 +320,8 @@ magistrale sopra indicata. Il tag di riferimento per le citazioni sarà
   recapitate (nessun server SMTP configurato): il plugin lo rileva e lo
   annota sull'ordine, ma la consegna della copia della fattura al cliente
   in quel caso resta manuale.
+- Il caso fiscale coperto è la cessione a un cessionario stabilito in
+  Italia con IVA ordinaria. Un cessionario estero riceve il codice
+  destinatario convenzionale dei non residenti, ma il regime delle vendite
+  a distanza intracomunitarie (sportello unico OSS) e le operazioni con
+  regimi speciali restano fuori dal perimetro.
